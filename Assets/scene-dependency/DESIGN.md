@@ -1,0 +1,8 @@
+- Must works in following situations:
+  - Editor playmode
+  - Builds
+- To correctly load dependency before a subject scene is loaded, the dependencies must be saved separately from scenes.
+  - (We can not access gameobjects until a scene is loaded and activated)
+- To save the dependencies
+  - Save it as ScriptableObject so it's easy to be persist (by reference it in scene monobehavior)
+  - Use addressables to make sure it's packed into builds (also easy access at runtime)
