@@ -147,7 +147,7 @@ PlayerSettings:
   androidMaxAspectRatio: 2.1
   applicationIdentifier:
     Android: com.BAStudio.SceneDependency
-    Standalone: com.DefaultCompany.SceneDependency
+    Standalone: com.BAStudio.SceneDependency
   buildNumber:
     Standalone: 0
     iPhone: 0
@@ -579,7 +579,8 @@ PlayerSettings:
   webGLLinkerTarget: 1
   webGLThreadsSupport: 0
   webGLDecompressionFallback: 0
-  scriptingDefineSymbols: {}
+  scriptingDefineSymbols:
+    1: SD_RES_LEGACY
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend: {}

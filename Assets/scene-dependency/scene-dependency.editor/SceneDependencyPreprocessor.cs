@@ -10,7 +10,7 @@ namespace BAStudio.SceneDependency
     [RequireComponent(typeof(SceneDependencyProxy))]
     public class SceneDependencyPreprocessor : MonoBehaviour, IPreprocessBuildWithReport
     {
-        public int callbackOrder => 0;
+        public int callbackOrder => 10;
 
         public void OnPreprocessBuild(BuildReport report)
         {
@@ -18,18 +18,14 @@ namespace BAStudio.SceneDependency
             SceneDependencyProxy holder = this.GetComponent<SceneDependencyProxy>();
             holder.forceReference = SceneDependencyProxy.cachedForceReference = SceneDependencyIndexEditorAccess.Instance;
         #if SD_RES_LEGACY
-            SceneDependencyIndexEditorAccess.Instance.Index.Add(holder.config.subject, holder.config);
+            SceneDependencyIndexEditorAccess.Instance.Index.Add(holder.config.subject.ScenePath, holder.config);
         #else
-            SceneDependencyIndexEditorAccess.Instance.Index.Add(GetAddressFromPath(holder.config.subject.ScenePath), holder.config);
+            SceneDependencyIndexEditorAccess.Instance.Index.Add(
+                UnityEditor.AddressableAssets.AddressableAssetSettingsDefaultObject.Settings.FindAssetEntry(holder.config.subject.AssetGUID).address,
+                holder.config
+            );
         #endif
             
-        }
-
-        public static string GetAddressFromPath(string path)
-        {
-            string guid = AssetDatabase.AssetPathToGUID(path);
-            var assetEntry = UnityEditor.AddressableAssets.AddressableAssetSettingsDefaultObject.Settings.FindAssetEntry(guid);
-            return assetEntry.address;
         }
 
     }
