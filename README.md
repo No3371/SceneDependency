@@ -10,9 +10,10 @@ Depedendency diagram:
 
 > A
 > - A.Dep1
->   - A.Dep1.Dep1
+>   - A.Dep1.Dep
 >   - A.Dep1+2.Dep (Depended by both A.Dep1 and A.Dep2)
 > - A.Dep2
+>   - A.Dep2.Dep
 >   - A.Dep1+2.Dep (Depended by both A.Dep1 and A.Dep2)
 
 We execute `SceneDependencyRuntime.LoadSceneAsync`, targeting scene `A`.
