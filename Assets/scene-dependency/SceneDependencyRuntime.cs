@@ -10,6 +10,7 @@ using UnityEngine.SceneManagement;
 namespace BAStudio.SceneDependency
 {
 
+
 #if SD_RES_LEGACY
     public static class SceneDependencyRuntime
     {
@@ -42,6 +43,8 @@ namespace BAStudio.SceneDependency
             public AsyncOperation value;
         }
 
+        public static bool zeroTimeScaleWhenLoading;
+
         /// <summary>
         /// 
         /// </summary>
@@ -60,40 +63,50 @@ namespace BAStudio.SceneDependency
                 value = SceneManager.LoadSceneAsync(accessor, mode)
             };
 
-            AsyncOperationWrapper aow = new();
+            AsyncOperationWrapper aow = new AsyncOperationWrapper();
             Broker.StartCoroutine(SceneWorker(deps, accessor, id, mode, reloadLoadedDep, aow));
             return aow;
         }
         
         public static AsyncOperationWrapper LoadSceneAsync (SceneReference scene, LoadSceneMode mode, bool reloadLoadedDep)
-        {
-            return LoadSceneAsync(scene.ScenePath, scene.NameCache, mode, reloadLoadedDep);
-        }
+            => LoadSceneAsync(scene.ScenePath, scene.NameCache, mode, reloadLoadedDep);
 
         static IEnumerator SceneWorker (SceneDependency deps, string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep, AsyncOperationWrapper aow)
         {
-            AsyncOperation[] ops = new AsyncOperation[deps.scenes.Length];
+            float cacheTimeScale = Time.timeScale;
+            if (zeroTimeScaleWhenLoading) Time.timeScale = 0;
+            var depScenes = ResolveDependencyTree(deps);
+            AsyncOperation[] ops = new AsyncOperation[depScenes.Count > SceneManager.sceneCount ? depScenes.Count : SceneManager.sceneCount];
+            Scene previousActiveScene = new Scene(); // Latest loaded scene can not be unloaded (it just fail), we unload it again later
             if (mode == LoadSceneMode.Single)
-            for (int i = SceneManager.sceneCount; i >= 0 ; i--)
             {
-                if (reloadLoadedDep)
+                for (int i = SceneManager.sceneCount - 1; i >= 0 ; i--)
                 {
-                    SceneManager.UnloadSceneAsync(SceneManager.GetSceneAt(i));
-                    continue;
-                }
-                bool isDep = false;
-                for (int j = 0; j < deps.scenes.Length; j++)
-                {
-                    if (SceneManager.GetSceneAt(i).path == deps.scenes[j].ScenePath)
+                    string iteratingScenePath = SceneManager.GetSceneAt(i).path;
+                    if (SceneManager.GetSceneAt(i).name == "DontDestroyOnLoad"
+                     || SceneDependencyIndex.AutoInstance.Index.ContainsKey(iteratingScenePath)
+                     && SceneDependencyIndex.AutoInstance.Index[iteratingScenePath].NoAutoUnloadInSingleLoadMode) continue;
+                    
+                    if (reloadLoadedDep)
                     {
-                        isDep = true;
-                        break;
+                        ops[i] = SceneManager.UnloadSceneAsync(SceneManager.GetSceneAt(i));
+                        continue;
+                    }
+                    bool isDep = false;
+                    for (int j = 0; j < deps.scenes.Length; j++)
+                    {
+                        if (SceneManager.GetSceneAt(i).path == deps.scenes[j].ScenePath)
+                        {
+                            isDep = true;
+                            break;
+                        }
+                    }
+                    if (!isDep)
+                    {
+                        ops[i] = SceneManager.UnloadSceneAsync(SceneManager.GetSceneAt(i));
                     }
                 }
-                if (!isDep)
-                {
-                    ops[i] = SceneManager.UnloadSceneAsync(SceneManager.GetSceneAt(i));
-                }
+                previousActiveScene = SceneManager.GetActiveScene();
             }
 
 
@@ -111,17 +124,15 @@ namespace BAStudio.SceneDependency
                 else yield return null;
             }
 
-            if (ops.Length < deps.scenes.Length)
-                ops = new AsyncOperation[deps.scenes.Length];
-            else for (int i = 0; i < ops.Length; i++) ops[i] = null;
+            for (int i = 0; i < ops.Length; i++) ops[i] = null;
 
-            for (int i = 0; i < deps.scenes.Length; i++)
+            for (int i = 0; i < depScenes.Count; i++)
             {
-                if (SceneManager.GetSceneByPath(deps.scenes[i].ScenePath).isLoaded)
+                if (SceneManager.GetSceneByPath(depScenes[i]).isLoaded)
                 {
                     continue;
                 }
-                ops[i] = SceneManager.LoadSceneAsync(deps.scenes[i], LoadSceneMode.Additive);
+                ops[i] = SceneManager.LoadSceneAsync(depScenes[i], LoadSceneMode.Additive);
             }
 
             lastCheck = Time.realtimeSinceStartup - 0.2f;
@@ -138,33 +149,57 @@ namespace BAStudio.SceneDependency
                 else yield return null;
             }
 
+            if (previousActiveScene.IsValid()) SceneManager.UnloadSceneAsync(previousActiveScene);
+
             aow.value = SceneManager.LoadSceneAsync(accessor, LoadSceneMode.Additive);
-            aow.value.allowSceneActivation = false;
-
-            Scene prefabScene = SceneManager.CreateScene(id + ".Dependencies");
-
-            if (deps.prefabs.Length == 0)
-            {
-                aow.value.allowSceneActivation = true;
-            }
-            else
-            {
-                try
+            aow.value.allowSceneActivation = true;
+            aow.value.completed += (h) => {
+                List<GameObject> cache = new List<GameObject>(32);
+                for (int i = 0; i < depScenes.Count; i++)
                 {
-                    for (int i = 0; i < deps.prefabs.Length; i++)
+                    Scene scene = SceneManager.GetSceneByPath(depScenes[i]);
+                    cache.Clear();
+                    scene.GetRootGameObjects(cache);
+                    for (int j = 0; j < cache.Count; j++)
                     {
-                        var prefab = GameObject.Instantiate(deps.prefabs[i]);
-                        SceneManager.MoveGameObjectToScene(prefab, prefabScene);
+                        if (cache[j] == null) break;
+                        cache[j].GetComponent<SceneDependencyProxy>()?.LoadedAsDep(scene.name, scene.path);
                     }
-                    aow.value.allowSceneActivation = true;
                 }
-                catch
-                {
-                    Debug.LogError(string.Concat("Failed to load dependencies for scene " + id));
-                    throw;
-                }
-            }
+                SceneManager.SetActiveScene(SceneManager.GetSceneByPath(accessor));
+            };
             
+            if (zeroTimeScaleWhenLoading) Time.timeScale = cacheTimeScale;
+        }
+
+        static List<string> ResolveDependencyTree (SceneDependency root)
+        {
+            HashSet<string> required = new HashSet<string>();
+            ResolveRequired(root, required);
+            List<string> result = new List<string>(required);
+            // result.Reverse();
+#if UNITY_EDITOR
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.AppendLine("Loading dependencies in order:");
+            for (int i = 0; i < result.Count; i++)
+            {
+                sb.AppendLine(result[i]);
+            }
+            Debug.Log(sb.ToString());
+#endif
+            return result;
+        }
+
+        static void ResolveRequired (SceneDependency subject, HashSet<string> results)
+        {
+            for (int i = 0; i < subject.scenes.Length; i++)
+            {
+                if (SceneDependencyIndex.AutoInstance.Index.TryGetValue(subject.scenes[i].ScenePath, out SceneDependency resolving))
+                {
+                    ResolveRequired(resolving, results);
+                }
+                results.Add(subject.scenes[i].ScenePath);
+            }
         }
     }
 #else

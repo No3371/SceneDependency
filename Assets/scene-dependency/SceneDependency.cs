@@ -16,8 +16,7 @@ namespace BAStudio.SceneDependency
     {
         public SceneReference subject;
         public SceneReference[] scenes;
-        public GameObject[] prefabs;
-        public virtual void LoadedAsDep (string masterSceneName, string masterScenePath) {}
+        public bool NoAutoUnloadInSingleLoadMode;
     }
     #else
     [CreateAssetMenu(menuName = "SceneDependency")]
@@ -25,9 +24,7 @@ namespace BAStudio.SceneDependency
     {
         public AssetReference subject;
         public AssetReference[] scenes;
-        public AssetReference[] prefabs;
-        
-        public virtual void LoadedAsDep (string masterSceneAddress) {}
+        public bool NoAutoUnloadInSingleLoadMode;
 
     }
     #endif

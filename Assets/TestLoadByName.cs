@@ -8,9 +8,9 @@ using UnityEngine.AddressableAssets;
 
 public class TestLoadByName : MonoBehaviour
 {
-    public string sceneName;
+    public string sceneName, scenePath;
     void Start ()
     {
-        SceneDependencyRuntime.LoadSceneAsync(sceneName, sceneName, UnityEngine.SceneManagement.LoadSceneMode.Single);
+        SceneDependencyRuntime.LoadSceneAsync(scenePath, sceneName, UnityEngine.SceneManagement.LoadSceneMode.Single, true);
     }
 }

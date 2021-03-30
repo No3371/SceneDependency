@@ -18,10 +18,11 @@ namespace BAStudio.SceneDependency
         public static void Hook ()
         {
             EditorSceneManager.sceneSaving += (scene, path) => {
+                if (EditorApplication.isPlaying) return;
                 var roots = scene.GetRootGameObjects();
                 var proxy = roots.FirstOrDefault(r => r.GetComponent<SceneDependencyProxy>())?.GetComponent<SceneDependencyProxy>();
                 if (proxy == null || proxy.config == null) return;
-                if (proxy.config.scenes.Length == 0 && proxy.config.prefabs.Length == 0) 
+                if (proxy.config.scenes.Length == 0) 
                     Debug.Log("[SceneDependency] No dependency configured, skip.");
 
                 if (proxy.config.subject == null || string.IsNullOrEmpty(proxy.config.subject.ScenePath))

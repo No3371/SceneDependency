@@ -11,7 +11,7 @@ public class TestLoad : MonoBehaviour
     public SceneReference scene;
     void Start ()
     {
-        Debug.Log("SceneReference path: " + scene.ScenePath);
-        SceneDependencyRuntime.LoadSceneAsync(scene, UnityEngine.SceneManagement.LoadSceneMode.Single);
+        // Debug.Log("SceneReference path: " + scene.ScenePath);
+        SceneDependencyRuntime.LoadSceneAsync(scene, UnityEngine.SceneManagement.LoadSceneMode.Single, true);
     }
 }
