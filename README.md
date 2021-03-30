@@ -4,4 +4,17 @@
 - Should be highly compatible to all kinds of project setups.
 - Supports both Unity's built-in system (SceneManager) and Addressables.
 
+# Example
+
+Depedendency diagram:
+
+> A
+> - A.Dep1
+>   - A.Dep1.Dep1
+>   - A.Dep1+2.Dep (Depended by both A.Dep1 and A.Dep2)
+> - A.Dep2
+>   - A.Dep1+2.Dep (Depended by both A.Dep1 and A.Dep2)
+
+We execute `SceneDependencyRuntime.LoadSceneAsync`, targeting scene `A`.
+
 ![](Docs/uk1ukKWEsY.gif)
