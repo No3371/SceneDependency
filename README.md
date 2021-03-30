@@ -4,3 +4,4 @@
 - Should be highly compatible to all kinds of project setups.
 - Supports both Unity's built-in system (SceneManager) and Addressables.
 
+![](Docs/uk1ukKWEsY.gif)
