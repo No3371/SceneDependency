@@ -1,3 +1,4 @@
+// #define LOG
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -27,9 +28,14 @@ namespace BAStudio.SceneDependency
             }
         }
 
+        static Scene LastLoadedScene { get; set; }
+
         static SceneDependencyRuntime ()
         {
             Init();
+            SceneManager.sceneLoaded += (s, mode) => {
+                LastLoadedScene = s;
+            };
         }
 
         [RuntimeInitializeOnLoadMethod]
@@ -58,7 +64,7 @@ namespace BAStudio.SceneDependency
             if (SceneDependencyIndex.AutoInstance == null) throw new System.Exception("Please make sure SceneDependency is initialized.");
             SceneDependency deps = SceneDependencyIndex.AutoInstance.Index[accessor];
             
-            if (deps == null) return new AsyncOperationWrapper
+            if (deps == null || deps.scenes.Length == 0) return new AsyncOperationWrapper
             {
                 value = SceneManager.LoadSceneAsync(accessor, mode)
             };
@@ -77,25 +83,30 @@ namespace BAStudio.SceneDependency
             if (zeroTimeScaleWhenLoading) Time.timeScale = 0;
             var depScenes = ResolveDependencyTree(deps);
             AsyncOperation[] ops = new AsyncOperation[depScenes.Count > SceneManager.sceneCount ? depScenes.Count : SceneManager.sceneCount];
-            Scene previousActiveScene = new Scene(); // Latest loaded scene can not be unloaded (it just fail), we unload it again later
+            Scene previousActiveScene = LastLoadedScene; // Latest loaded scene can not be unloaded (it just fail), we unload it again later
             if (mode == LoadSceneMode.Single)
             {
                 for (int i = SceneManager.sceneCount - 1; i >= 0 ; i--)
                 {
-                    string iteratingScenePath = SceneManager.GetSceneAt(i).path;
-                    if (SceneManager.GetSceneAt(i).name == "DontDestroyOnLoad"
-                     || SceneDependencyIndex.AutoInstance.Index.ContainsKey(iteratingScenePath)
-                     && SceneDependencyIndex.AutoInstance.Index[iteratingScenePath].NoAutoUnloadInSingleLoadMode) continue;
+                    Scene iteratingScene = SceneManager.GetSceneAt(i);
+                    if (iteratingScene == LastLoadedScene) continue;
+                    string iteratingScenePath = iteratingScene.path;
+                    if (iteratingScene.name == "DontDestroyOnLoad"
+                     || (SceneDependencyIndex.AutoInstance.Index.ContainsKey(iteratingScenePath)
+                     && SceneDependencyIndex.AutoInstance.Index[iteratingScenePath].NoAutoUnloadInSingleLoadMode)) continue;
                     
-                    if (reloadLoadedDep)
+                    if (reloadLoadedDep && depScenes.Contains(iteratingScenePath))
                     {
-                        ops[i] = SceneManager.UnloadSceneAsync(SceneManager.GetSceneAt(i));
+                        #if LOG
+                        Debug.Log(string.Concat("Reloading scene: ", iteratingScenePath));
+                        #endif
+                        ops[i] = SceneManager.UnloadSceneAsync(iteratingScene);
                         continue;
                     }
                     bool isDep = false;
                     for (int j = 0; j < deps.scenes.Length; j++)
                     {
-                        if (SceneManager.GetSceneAt(i).path == deps.scenes[j].ScenePath)
+                        if (iteratingScene.path == deps.scenes[j].ScenePath)
                         {
                             isDep = true;
                             break;
@@ -103,7 +114,10 @@ namespace BAStudio.SceneDependency
                     }
                     if (!isDep)
                     {
-                        ops[i] = SceneManager.UnloadSceneAsync(SceneManager.GetSceneAt(i));
+                        #if LOG
+                        Debug.Log(string.Concat("Unloading scene: ", iteratingScenePath));
+                        #endif
+                        ops[i] = SceneManager.UnloadSceneAsync(iteratingScene);
                     }
                 }
                 previousActiveScene = SceneManager.GetActiveScene();
@@ -130,8 +144,14 @@ namespace BAStudio.SceneDependency
             {
                 if (SceneManager.GetSceneByPath(depScenes[i]).isLoaded)
                 {
+                    #if LOG
+                    Debug.Log(string.Concat("Dep scene is loaded, skip: ", depScenes[i]));
+                    #endif
                     continue;
                 }
+                #if LOG
+                Debug.Log(string.Concat("Loading scene: ", depScenes[i]));
+                #endif
                 ops[i] = SceneManager.LoadSceneAsync(depScenes[i], LoadSceneMode.Additive);
             }
 
@@ -149,7 +169,7 @@ namespace BAStudio.SceneDependency
                 else yield return null;
             }
 
-            if (previousActiveScene.IsValid()) SceneManager.UnloadSceneAsync(previousActiveScene);
+            if (previousActiveScene.IsValid() && !depScenes.Contains(previousActiveScene.path)) SceneManager.UnloadSceneAsync(previousActiveScene);
 
             aow.value = SceneManager.LoadSceneAsync(accessor, LoadSceneMode.Additive);
             aow.value.allowSceneActivation = true;
@@ -172,7 +192,7 @@ namespace BAStudio.SceneDependency
             if (zeroTimeScaleWhenLoading) Time.timeScale = cacheTimeScale;
         }
 
-        static List<string> ResolveDependencyTree (SceneDependency root)
+        public static List<string> ResolveDependencyTree (SceneDependency root)
         {
             HashSet<string> required = new HashSet<string>();
             ResolveRequired(root, required);
@@ -194,6 +214,7 @@ namespace BAStudio.SceneDependency
         {
             for (int i = 0; i < subject.scenes.Length; i++)
             {
+                if (results.Contains(subject.scenes[i].ScenePath)) continue;
                 if (SceneDependencyIndex.AutoInstance.Index.TryGetValue(subject.scenes[i].ScenePath, out SceneDependency resolving))
                 {
                     ResolveRequired(resolving, results);

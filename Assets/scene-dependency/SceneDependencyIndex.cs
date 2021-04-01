@@ -131,15 +131,19 @@ namespace BAStudio.SceneDependency
         {
             get
             {
-                #if UNITY_EDITOR
+        #if UNITY_EDITOR
                 return SceneDependencyIndexEditorAccess.Instance;
-                #else
+        #else
                 if (runtimeInstance != null) return runtimeInstance;
 
             #if SD_RES_LEGACY
-                
+                var r = Resources.LoadAsync<SceneDependencyIndex>("SceneDependencyIndex");
+                r.completed += (_) =>
+                {
+                    runtimeInstance = r.asset as SceneDependencyIndex;
+                };
             #else
-                var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(".SceneDependencyIndex");
+                var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>("SceneDependency/Index");
                 aoh.Completed += (h) =>
                 {
                     runtimeInstance = h.Result;
@@ -147,7 +151,7 @@ namespace BAStudio.SceneDependency
             #endif
 
                 return runtimeInstance;
-                #endif
+        #endif
             }
         }
     }
