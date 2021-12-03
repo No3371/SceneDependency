@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEditor.AddressableAssets;
 
-namespace BAStudio.SceneDependency
+namespace BAStudio.SceneDependencies
 {
     [RequireComponent(typeof(SceneDependencyProxy))]
     public class SceneDependencyPreprocessor : MonoBehaviour, IPreprocessBuildWithReport
@@ -17,14 +17,14 @@ namespace BAStudio.SceneDependency
 
             SceneDependencyProxy holder = this.GetComponent<SceneDependencyProxy>();
             holder.forceReference = SceneDependencyProxy.cachedForceReference = SceneDependencyIndexEditorAccess.Instance;
-        #if SD_RES_LEGACY
+    #if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
             SceneDependencyIndexEditorAccess.Instance.Index.Add(holder.config.subject.ScenePath, holder.config);
-        #else
+    #elif !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLE
             SceneDependencyIndexEditorAccess.Instance.Index.Add(
                 UnityEditor.AddressableAssets.AddressableAssetSettingsDefaultObject.Settings.FindAssetEntry(holder.config.subject.AssetGUID).address,
                 holder.config
             );
-        #endif
+    #endif
             
         }
 

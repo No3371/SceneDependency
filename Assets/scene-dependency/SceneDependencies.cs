@@ -8,24 +8,25 @@ using UnityEngine.AddressableAssets;
 using UnityEngine.SceneManagement;
 
 
-namespace BAStudio.SceneDependency
+namespace BAStudio.SceneDependencies
 {
-    #if SD_RES_LEGACY
-    [CreateAssetMenu(menuName = "SceneDependency")]
-    public class SceneDependency : ScriptableObject
+#if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
+    [CreateAssetMenu(menuName = "SceneDependencies")]
+    public class SceneDependencies : ScriptableObject
     {
         public SceneReference subject;
         public SceneReference[] scenes;
         public bool NoAutoUnloadInSingleLoadMode;
     }
-    #else
-    [CreateAssetMenu(menuName = "SceneDependency")]
-    public class SceneDependency : ScriptableObject
+#elif !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLE
+
+    [CreateAssetMenu(menuName = "SceneDependencies")]
+    public class SceneDependencies : ScriptableObject
     {
         public AssetReference subject;
         public AssetReference[] scenes;
         public bool NoAutoUnloadInSingleLoadMode;
 
     }
-    #endif
+#endif
 }

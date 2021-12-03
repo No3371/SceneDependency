@@ -1,6 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
-using BAStudio.SceneDependency;
+using BAStudio.SceneDependencies;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.AddressableAssets;

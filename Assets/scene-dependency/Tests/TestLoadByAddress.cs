@@ -1,13 +1,15 @@
+#if !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLE
+
 using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
-using BAStudio.SceneDependency;
+using BAStudio.SceneDependencies;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using Unity.Addressables;
 
-public class TestLoadBySceneRef
+public class TestLoadByAddress
 {
     public GameObject runnerHost;
 
@@ -31,30 +33,34 @@ public class TestLoadBySceneRef
     // `yield return null;` to skip a frame.
     [UnityTest]
     // [Timeout(5000)]
-    public IEnumerator TestLoadBySceneRefWithEnumeratorPasses(
-        [ValueSource("names")] string name,
-        [ValueSource("paths")] string path,
+    public IEnumerator TestLoadByAddressWithEnumeratorPasses(
+        [ValueSource("addresses")] string addr,
         [ValueSource("modes")] LoadSceneMode mode,
         [ValueSource("reloadOrNot")] bool reloadLoadedScenes)
     {
-        var aow = SceneDependencyRuntime.LoadSceneAsync(path, name, UnityEngine.SceneManagement.LoadSceneMode.Single, true);
+        var aow = SceneDependencyRuntime.LoadSceneAsync(addr, mode, reloadLoadedScenes);
         while (aow.value == null || !aow.value.isDone)
         {
             yield return null;
         }
 
-        var required = SceneDependencyRuntime.ResolveDependencyTree(SceneDependencyIndex.AutoInstance.Index[path]);
-        foreach (string s in required)
+        var required = SceneDependencyRuntime.ResolveDependencyTree(SceneDependencyIndex.AutoInstance.Index[addr]);
+        var loc = Addressables.LoadResourceLocationsAsync(required as IEnumerable, Addressables.MergeMode.Union);
+        var locations = loc.Result;
+        var depSceneInternalPaths = locations.Select(l => l.InternalId).ToArray();
+        foreach (string s in depSceneInternalPaths)
         {
             Assert.IsTrue(SceneManager.GetSceneByPath(s).isLoaded, "Required scene {0} is not loaded!", s);
         }
         Assert.IsTrue(SceneManager.GetSceneByPath(path).isLoaded, "Master scene {0} is not loaded!", path);
+        yield return new WaitForSeconds(1);
         Assert.Pass();
 
     }
 
-    public static string[] names = new string[] { "A" };
-    public static string[] paths = new string[] { "Assets/Scenes/A.unity" };
+    public static string[] addresses = new string[] { "SceneA" };
     public static LoadSceneMode[] modes = new LoadSceneMode[] { LoadSceneMode.Additive, LoadSceneMode.Single };
     public static bool[] reloadOrNot = new bool[] { true, false }; 
 }
+
+#endif

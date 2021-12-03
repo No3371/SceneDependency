@@ -10,24 +10,24 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bbb281ee3bf0b054c82ac2347e9e782c, type: 3}
-  m_Name: Default Local Group
+  m_Name: DEP.CLOUD
   m_EditorClassIdentifier: 
-  m_GroupName: Default Local Group
+  m_GroupName: DEP.CLOUD
   m_Data:
     m_SerializedData: []
-  m_GUID: 0074defd662617e40ab2fa5caa89af0d
+  m_GUID: 02e43511d02fddd499d537f95c5b7000
   m_SerializeEntries:
-  - m_GUID: e5d59850f1ec641448dc0f0aaa698048
-    m_Address: A/B
+  - m_GUID: 2294b9e24480f784aad3fcc2efaba7a3
+    m_Address: SceneA.Dep1+2.Dep
     m_ReadOnly: 0
     m_SerializedLabels: []
-  - m_GUID: 46e59aeea73ad7a4da9200491f55991b
-    m_Address: .SceneDepeendencyIndex
+  - m_GUID: a69d058e03e9d06439636312ef48d5b4
+    m_Address: SceneA.Dep2.Dep
     m_ReadOnly: 0
     m_SerializedLabels: []
   m_ReadOnly: 0
   m_Settings: {fileID: 11400000, guid: bea75ffad3aa7f9418a55e74a6425c76, type: 2}
   m_SchemaSet:
     m_Schemas:
-    - {fileID: 11400000, guid: c6d4961a04986574187b185663e97045, type: 2}
-    - {fileID: 11400000, guid: 309a3ba758a63c04cb8eaf779475ee0c, type: 2}
+    - {fileID: 11400000, guid: 99ffe753b7bfddf439296c839a3cca1e, type: 2}
+    - {fileID: 11400000, guid: a5f83dae584a42b44a95c8f220061368, type: 2}

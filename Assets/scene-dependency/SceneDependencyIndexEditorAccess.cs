@@ -2,7 +2,7 @@
 using UnityEditor;
 using UnityEngine;
 
-namespace BAStudio.SceneDependency
+namespace BAStudio.SceneDependencies
 {
     public static class SceneDependencyIndexEditorAccess
     {
@@ -11,7 +11,7 @@ namespace BAStudio.SceneDependency
         {
             get
             {
-                if (Instance == null);
+                if (Instance == null); // NO WORRY
                 return indexAssetGUID;
             }
             private set => indexAssetGUID = value;
@@ -35,7 +35,7 @@ namespace BAStudio.SceneDependency
                     }
                     else if (lookup.Length > 1)
                     {
-                        throw new System.Exception("[SceneDependency] There are more then 1 SceneDependencyIndex scriptable object among the assets!");
+                        throw new System.Exception("[SceneDependencies] There are more then 1 SceneDependencyIndex scriptable object among the assets!");
                     }
                     else
                     {

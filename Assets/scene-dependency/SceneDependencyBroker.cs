@@ -1,7 +1,7 @@
 using UnityEngine;
 
 
-namespace BAStudio.SceneDependency
+namespace BAStudio.SceneDependencies
 {
     public class SceneDependencyBroker : MonoBehaviour {}
 }

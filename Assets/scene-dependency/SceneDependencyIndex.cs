@@ -4,20 +4,20 @@ using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.SceneManagement;
 
-namespace BAStudio.SceneDependency
+namespace BAStudio.SceneDependencies
 {
-#if SD_RES_LEGACY
+#if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
     public class SceneDependencyIndex : ScriptableObject, ISerializationCallbackReceiver
     {
         [SerializeField]
         [HideInInspector]
         List<string> cachedPaths;
         [SerializeField]
-        List<SceneDependency> sceneDependencies;
+        List<SceneDependencies> sceneDependencies;
         [NonSerialized]
-        private Dictionary<string, SceneDependency> index;
+        private Dictionary<string, SceneDependencies> index;
 
-        public Dictionary<string, SceneDependency> Index
+        public Dictionary<string, SceneDependencies> Index
         {
             get 
             {
@@ -31,14 +31,14 @@ namespace BAStudio.SceneDependency
         /// </summary>
         /// <param name="id">Address when using Addressables, scene file path in other cases</param>
         /// <param name="deps"></param>
-        public void Add (string id, SceneDependency deps)
+        public void Add (string id, SceneDependencies deps)
         {
             Index.Add(id, deps);
         }
 
         void PopulateIndex ()
         {
-            // Debug.LogFormat("[SceneDependency] Populating {0} entries.", sceneDependencies.Count);
+            // Debug.LogFormat("[SceneDependencies] Populating {0} entries.", sceneDependencies.Count);
             for (int i = 0; i < sceneDependencies.Count; i++)
             {
                 if (index.ContainsKey(cachedPaths[i]))
@@ -54,8 +54,8 @@ namespace BAStudio.SceneDependency
 
         void EnsureIndexReady ()
         {
-            if (index == null) index = new Dictionary<string, SceneDependency>();
-            if (sceneDependencies == null) sceneDependencies = new List<SceneDependency>();
+            if (index == null) index = new Dictionary<string, SceneDependencies>();
+            if (sceneDependencies == null) sceneDependencies = new List<SceneDependencies>();
             bool perfectMatch = true;
             if (index.Count != sceneDependencies.Count) perfectMatch = false;
             if (perfectMatch)
@@ -96,7 +96,7 @@ namespace BAStudio.SceneDependency
 
         public void OnAfterDeserialize()
         {
-            if (index == null) index = new Dictionary<string, SceneDependency>();
+            if (index == null) index = new Dictionary<string, SceneDependencies>();
             index.Clear();
             PopulateIndex();
         }
@@ -106,7 +106,7 @@ namespace BAStudio.SceneDependency
             if (index == null) return;
             if (NeedUpdateForSerialize())
             {
-                if (sceneDependencies == null) sceneDependencies = new List<SceneDependency>();
+                if (sceneDependencies == null) sceneDependencies = new List<SceneDependencies>();
                 else sceneDependencies?.Clear();
                 if (cachedPaths == null) cachedPaths = new List<string>();
                 else cachedPaths?.Clear();
@@ -114,7 +114,7 @@ namespace BAStudio.SceneDependency
                 {
                     while(e.MoveNext())
                     {
-                        Debug.LogFormat("[SceneDependency] Adding {0} to serializing dependencies.", e.Current.Key);
+                        Debug.LogFormat("[SceneDependencies] Adding {0} to serializing dependencies.", e.Current.Key);
                         sceneDependencies.Add(e.Current.Value);
                         cachedPaths.Add(e.Current.Key);
                     }
@@ -136,7 +136,7 @@ namespace BAStudio.SceneDependency
         #else
                 if (runtimeInstance != null) return runtimeInstance;
 
-            #if SD_RES_LEGACY
+            #if !SCENE_DEP_OVERRIDE || !SCENE_DEP_LEGACY
                 var r = Resources.LoadAsync<SceneDependencyIndex>("SceneDependencyIndex");
                 r.completed += (_) =>
                 {
@@ -155,18 +155,21 @@ namespace BAStudio.SceneDependency
             }
         }
     }
-#else
+
+
+#elif !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLE
+
     public class SceneDependencyIndex : ScriptableObject, ISerializationCallbackReceiver
     {
         [SerializeField]
         [HideInInspector]
         List<string> cachedAddresses;
         [SerializeField]
-        List<SceneDependency> sceneDependencies;
+        List<SceneDependencies> sceneDependencies;
         [NonSerialized]
-        private Dictionary<string, SceneDependency> index;
+        private Dictionary<string, SceneDependencies> index;
 
-        public Dictionary<string, SceneDependency> Index
+        public Dictionary<string, SceneDependencies> Index
         {
             get 
             {
@@ -179,22 +182,21 @@ namespace BAStudio.SceneDependency
         /// <summary>
         /// 
         /// </summary>
-        /// <param name="id">Address when using Addressables, scene file path in other cases</param>
+        /// <param name="id">scene file path</param>
         /// <param name="deps"></param>
-        public void Add (string address, SceneDependency deps)
+        public void Add (string address, SceneDependencies deps)
         {
-            
             Index.Add(address, deps);
         }
 #endif
         void PopulateIndex ()
         {
-            // Debug.LogFormat("[SceneDependency] Populating {0} entries.", sceneDependencies.Count);
+            // Debug.LogFormat("[SceneDependencies] Populating {0} entries.", sceneDependencies.Count);
             for (int i = 0; i < sceneDependencies.Count; i++)
             {
                 if (index.ContainsKey(cachedAddresses[i]))
                 {
-                    Debug.LogErrorFormat("Found duplicate SceneDependency for {0}, removing...", sceneDependencies[i].subject.Asset.name);
+                    Debug.LogErrorFormat("Found duplicate SceneDependencies for {0}, removing...", sceneDependencies[i].subject.Asset.name);
                     sceneDependencies.RemoveAt(i);
                     i--;
                     continue;
@@ -229,7 +231,7 @@ namespace BAStudio.SceneDependency
 
         public void OnAfterDeserialize()
         {
-            if (index == null) index = new Dictionary<string, SceneDependency>();
+            if (index == null) index = new Dictionary<string, SceneDependencies>();
             index.Clear();
             PopulateIndex();
         }
@@ -238,7 +240,7 @@ namespace BAStudio.SceneDependency
         {
             if (index == null || index.Count == 0) return;
 
-            if (sceneDependencies == null) sceneDependencies = new List<SceneDependency>();
+            if (sceneDependencies == null) sceneDependencies = new List<SceneDependencies>();
             else sceneDependencies?.Clear();
             if (cachedAddresses == null) cachedAddresses = new List<string>();
             else cachedAddresses?.Clear();
@@ -246,7 +248,7 @@ namespace BAStudio.SceneDependency
             {
                 while(e.MoveNext())
                 {
-                    Debug.LogFormat("[SceneDependency] Adding {0} to serializing dependencies.", e.Current.Key);
+                    Debug.LogFormat("[SceneDependencies] Adding {0} to serializing dependencies.", e.Current.Key);
                     sceneDependencies.Add(e.Current.Value);
                     cachedAddresses.Add(e.Current.Key);
                 }
@@ -262,23 +264,19 @@ namespace BAStudio.SceneDependency
         {
             get
             {
-                #if UNITY_EDITOR
+#if UNITY_EDITOR
                 return SceneDependencyIndexEditorAccess.Instance;
-                #else
+#else
                 if (runtimeInstance != null) return runtimeInstance;
 
-            #if SD_RES_LEGACY
-                
-            #else
                 var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(".SceneDependencyIndex");
                 aoh.Completed += (h) =>
                 {
                     runtimeInstance = h.Result;
                 };
-            #endif
 
                 return runtimeInstance;
-                #endif
+#endif
             }
         }
 

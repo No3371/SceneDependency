@@ -1,4 +1,5 @@
 // #define LOG
+#if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -8,11 +9,10 @@ using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
 
 
-namespace BAStudio.SceneDependency
+namespace BAStudio.SceneDependencies
 {
 
 
-#if SD_RES_LEGACY
     public static class SceneDependencyRuntime
     {
         static SceneDependencyBroker broker;
@@ -21,7 +21,7 @@ namespace BAStudio.SceneDependency
             get
             {
                 if (broker != null) return broker;
-                
+
                 broker = new GameObject("SceneDependencyBroker", typeof(SceneDependencyBroker)).GetComponent<SceneDependencyBroker>();
                 GameObject.DontDestroyOnLoad(broker);
                 return broker;
@@ -41,7 +41,7 @@ namespace BAStudio.SceneDependency
         [RuntimeInitializeOnLoadMethod]
         static void Init ()
         {
-            if (SceneDependencyIndex.AutoInstance == null) Debug.Log("[SceneDependency] Index not yet loaded.");
+            if (SceneDependencyIndex.AutoInstance == null) Debug.Log("[SceneDependencies] Index not yet loaded.");
         }
 
         public class AsyncOperationWrapper
@@ -62,9 +62,10 @@ namespace BAStudio.SceneDependency
         public static AsyncOperationWrapper LoadSceneAsync (string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep)
         {
             if (SceneDependencyIndex.AutoInstance == null) throw new System.Exception("Please make sure SceneDependency is initialized.");
-            SceneDependency deps = SceneDependencyIndex.AutoInstance.Index[accessor];
-            
-            if (deps == null || deps.scenes.Length == 0) return new AsyncOperationWrapper
+            SceneDependencies deps = SceneDependencyIndex.AutoInstance.Index[accessor];
+
+            if (deps == null || deps.scenes.Length == 0)
+            return new AsyncOperationWrapper
             {
                 value = SceneManager.LoadSceneAsync(accessor, mode)
             };
@@ -73,11 +74,11 @@ namespace BAStudio.SceneDependency
             Broker.StartCoroutine(SceneWorker(deps, accessor, id, mode, reloadLoadedDep, aow));
             return aow;
         }
-        
+
         public static AsyncOperationWrapper LoadSceneAsync (SceneReference scene, LoadSceneMode mode, bool reloadLoadedDep)
             => LoadSceneAsync(scene.ScenePath, scene.NameCache, mode, reloadLoadedDep);
 
-        static IEnumerator SceneWorker (SceneDependency deps, string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep, AsyncOperationWrapper aow)
+        static IEnumerator SceneWorker (SceneDependencies deps, string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep, AsyncOperationWrapper aow)
         {
             float cacheTimeScale = Time.timeScale;
             if (zeroTimeScaleWhenLoading) Time.timeScale = 0;
@@ -94,7 +95,7 @@ namespace BAStudio.SceneDependency
                     if (iteratingScene.name == "DontDestroyOnLoad"
                      || (SceneDependencyIndex.AutoInstance.Index.ContainsKey(iteratingScenePath)
                      && SceneDependencyIndex.AutoInstance.Index[iteratingScenePath].NoAutoUnloadInSingleLoadMode)) continue;
-                    
+
                     if (reloadLoadedDep && depScenes.Contains(iteratingScenePath))
                     {
                         #if LOG
@@ -124,7 +125,7 @@ namespace BAStudio.SceneDependency
             }
 
 
-            float lastCheck = Time.realtimeSinceStartup - 0.2f;
+            float lastCheck = Time.realtimeSinceStartup - 0.19f;
             while (true)
             {
                 if (Time.realtimeSinceStartup - lastCheck < 0.1) yield return null;
@@ -192,7 +193,7 @@ namespace BAStudio.SceneDependency
             if (zeroTimeScaleWhenLoading) Time.timeScale = cacheTimeScale;
         }
 
-        public static List<string> ResolveDependencyTree (SceneDependency root)
+        public static List<string> ResolveDependencyTree (SceneDependencies root)
         {
             HashSet<string> required = new HashSet<string>();
             ResolveRequired(root, required);
@@ -203,19 +204,19 @@ namespace BAStudio.SceneDependency
             sb.AppendLine("Loading dependencies in order:");
             for (int i = 0; i < result.Count; i++)
             {
-                sb.AppendLine(result[i]);
+                sb.AppendLine("- " + result[i]);
             }
             Debug.Log(sb.ToString());
 #endif
             return result;
         }
 
-        static void ResolveRequired (SceneDependency subject, HashSet<string> results)
+        static void ResolveRequired (SceneDependencies subject, HashSet<string> results)
         {
             for (int i = 0; i < subject.scenes.Length; i++)
             {
                 if (results.Contains(subject.scenes[i].ScenePath)) continue;
-                if (SceneDependencyIndex.AutoInstance.Index.TryGetValue(subject.scenes[i].ScenePath, out SceneDependency resolving))
+                if (SceneDependencyIndex.AutoInstance.Index.TryGetValue(subject.scenes[i].ScenePath, out SceneDependencies resolving))
                 {
                     ResolveRequired(resolving, results);
                 }
@@ -223,155 +224,6 @@ namespace BAStudio.SceneDependency
             }
         }
     }
-#else
-
-    public static class SceneDependencyRuntime
-    {
-        static SceneDependencyBroker broker;
-        static SceneDependencyBroker Broker
-        {
-            get
-            {
-                if (broker != null) return broker;
-                
-                broker = new GameObject("SceneDependencyBroker", typeof(SceneDependencyBroker)).GetComponent<SceneDependencyBroker>();
-                GameObject.DontDestroyOnLoad(broker);
-                return broker;
-            }
-        }
-        static SceneDependencyRuntime ()
-        {
-            Init();
-        }
-
-        [RuntimeInitializeOnLoadMethod]
-        static void Init ()
-        {
-            if (SceneDependencyIndex.AutoInstance == null) Debug.Log("[SceneDependency] Index not yet loaded.");
-        }
-
-            #if SD_RES_LEGACY
-        public static AsyncOperation LoadSceneAsync (string accesor, string id, LoadSceneMode mode)
-            #else
-        public static AsyncOperationHandle<SceneInstance> LoadSceneAsync (string accesor, string id, LoadSceneMode mode)
-            #endif
-        {
-            if (SceneDependencyIndex.AutoInstance == null) throw new System.Exception("Please make sure SceneDependency is initialized.");
-            SceneDependency deps = SceneDependencyIndex.AutoInstance.Index[accesor];
-            
-        #if SD_RES_LEGACY
-            if (deps == null) return SceneManager.LoadSceneAsync(accesor, mode);
-        #else
-            if (deps == null) return Addressables.LoadSceneAsync(accesor, mode);
-        #endif
-
-            if (mode == LoadSceneMode.Single)
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                for (int j = 0; j < deps.scenes.Length; j++)
-                {
-                    if (SceneManager.GetSceneAt(i).path == deps.scenes[j].ScenePath)
-                }
-
-            }
-
-            int depCount = 0;
-            // broker.StartCoroutine(Watchman(ref depCount, accesor));
-            #if SD_RES_LEGACY
-                void SceneDepCompleted (AsyncOperation ao) => depCount++;
-            #else
-                void SceneDepCompleted (AsyncOperationHandle<SceneInstance> ao) => depCount++;
-            #endif
-
-            for (int i = 0; i < deps.scenes.Length; i++)
-            {
-                if (SceneManager.GetSceneByPath(deps.scenes[i].ScenePath).isLoaded)
-                {
-                    depCount++;
-                    continue;
-                }
-            #if SD_RES_LEGACY
-                var depAO = SceneManager.LoadSceneAsync(deps.scenes[i], LoadSceneMode.Additive);
-                depAO.completed += SceneDepCompleted;
-            #else
-                var depAO = Addressables.LoadSceneAsync(deps.scenes[i].ScenePath, LoadSceneMode.Additive);
-                depAO.Completed += SceneDepCompleted;
-            #endif
-
-            }
-            
-        #if SD_RES_LEGACY
-            var masterAO = SceneManager.LoadSceneAsync(accesor, LoadSceneMode.Additive);
-            masterAO.allowSceneActivation = false;
-        #else
-            var aoh = Addressables.LoadSceneAsync(accesor, LoadSceneMode.Additive, false);
-        #endif
-
-            Scene prefabScene = SceneManager.CreateScene(id + ".Dependencies");
-
-            if (deps.prefabs.Length == 0)
-            {
-            #if SD_RES_LEGACY
-                masterAO.allowSceneActivation = true;
-            #else
-                aoh.Result.ActivateAsync();
-            #endif
-            }
-            else
-            {
-                void PrefabDepCompleted (GameObject loaded)
-                {
-                    SceneManager.MoveGameObjectToScene(loaded, prefabScene);
-                    depCount++;
-                    if (depCount == deps.scenes.Length + deps.prefabs.Length)
-                    {
-                    #if SD_RES_LEGACY
-                        masterAO.allowSceneActivation = true;
-                    #else
-                        aoh.Result.ActivateAsync();
-                    #endif
-                    }
-                }
-
-            #if SD_RES_LEGACY
-                for (int i = 0; i < deps.prefabs.Length; i++)
-                {
-                    var prefab = GameObject.Instantiate(deps.prefabs[i]);
-                    PrefabDepCompleted(prefab);
-                }
-            #else
-                var prefabAO = Addressables.LoadAssetsAsync<GameObject>(deps.prefabs, PrefabDepCompleted);
-                prefabAO.Completed += (h) => {
-                    if (h.Status == AsyncOperationStatus.Failed)
-                    {
-                        throw new System.Exception("Failed to load dependencies for scene " + id, h.OperationException);
-                    }
-                };
-            #endif
-            }
-
-        #if SD_RES_LEGACY
-            return masterAO;
-            
-        #else
-            return aoh;
-        #endif
-        }
-
-        #if SD_RES_LEGACY
-        public static AsyncOperation LoadSceneAsync (SceneReference scene, LoadSceneMode mode)
-        {
-            return LoadSceneAsync(scene.ScenePath, scene.NameCache, mode);
-        }
-            
-        #else
-        public static AsyncOperationHandle<SceneInstance> LoadSceneAsync (SceneReference scene, LoadSceneMode mode)
-        {
-            return LoadSceneAsync(scene.ScenePath, scene.NameCache, mode);
-        }
-        #endif
-
-
-    }
-#endif
 }
+
+#endif
