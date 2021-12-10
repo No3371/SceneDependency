@@ -1,0 +1,22 @@
+{
+    "name": "BAStudio.SceneDependencies.Legacy.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:929f7cdcfe8740f4f9aea07da56e2466",
+        "GUID:84651a3751eca9349aac36a66bba901b",
+        "GUID:607e5fc428cee124e9280c8cd460767b"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "!SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

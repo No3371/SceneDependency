@@ -1,0 +1,17 @@
+{
+    "name": "BAStudio.SceneDependencies",
+    "rootNamespace": "",
+    "references": [
+        "GUID:607e5fc428cee124e9280c8cd460767b",
+        "GUID:84651a3751eca9349aac36a66bba901b"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

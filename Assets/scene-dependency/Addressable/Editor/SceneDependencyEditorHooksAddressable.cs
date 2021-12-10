@@ -1,10 +1,9 @@
-#if !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLE
-
+#if UNITY_EDITOR
 using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
+using Unity.Addressables;
 
 namespace BAStudio.SceneDependencies
 {

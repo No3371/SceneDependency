@@ -10,16 +10,6 @@ using UnityEngine.SceneManagement;
 
 namespace BAStudio.SceneDependencies
 {
-#if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
-    [CreateAssetMenu(menuName = "SceneDependencies")]
-    public class SceneDependencies : ScriptableObject
-    {
-        public SceneReference subject;
-        public SceneReference[] scenes;
-        public bool NoAutoUnloadInSingleLoadMode;
-    }
-#elif !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLE
-
     [CreateAssetMenu(menuName = "SceneDependencies")]
     public class SceneDependencies : ScriptableObject
     {
@@ -28,5 +18,4 @@ namespace BAStudio.SceneDependencies
         public bool NoAutoUnloadInSingleLoadMode;
 
     }
-#endif
 }

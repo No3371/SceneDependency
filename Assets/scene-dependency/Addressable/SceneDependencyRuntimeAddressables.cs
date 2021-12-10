@@ -1,5 +1,5 @@
 // #define LOG
-#if !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLE
+#if !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLES
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;

@@ -14,7 +14,7 @@ public class TestLoadByName : MonoBehaviour
     }
 }
 
-#elif !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLE
+#elif !SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLES
 using System.Collections;
 using System.Collections.Generic;
 using BAStudio.SceneDependencies;
