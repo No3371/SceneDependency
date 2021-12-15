@@ -39,8 +39,8 @@
     ],
     "autoReferenced": false,
     "defineConstraints": [
-        "UNITY_INCLUDE_TESTS",
-        "!SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLES"
+        "!SCENE_DEP_OVERRIDE || SCENE_DEP_ADDRESSABLES",
+        "UNITY_INCLUDE_TESTS"
     ],
     "versionDefines": [],
     "noEngineReferences": false

@@ -1,9 +1,7 @@
-// #define LOG
-#if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
+#define LOG
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
@@ -62,13 +60,14 @@ namespace BAStudio.SceneDependencies
         public static AsyncOperationWrapper LoadSceneAsync (string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep)
         {
             if (SceneDependencyIndex.AutoInstance == null) throw new System.Exception("Please make sure SceneDependency is initialized.");
-            SceneDependencies deps = SceneDependencyIndex.AutoInstance.Index[accessor];
+            SceneDependencies deps;
+            SceneDependencyIndex.AutoInstance.Index.TryGetValue(accessor, out deps);
 
             if (deps == null || deps.scenes.Length == 0)
-            return new AsyncOperationWrapper
-            {
-                value = SceneManager.LoadSceneAsync(accessor, mode)
-            };
+                return new AsyncOperationWrapper
+                {
+                    value = SceneManager.LoadSceneAsync(accessor, mode)
+                };
 
             AsyncOperationWrapper aow = new AsyncOperationWrapper();
             Broker.StartCoroutine(SceneWorker(deps, accessor, id, mode, reloadLoadedDep, aow));
@@ -80,6 +79,7 @@ namespace BAStudio.SceneDependencies
 
         static IEnumerator SceneWorker (SceneDependencies deps, string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep, AsyncOperationWrapper aow)
         {
+            Session session = new Session();
             float cacheTimeScale = Time.timeScale;
             if (zeroTimeScaleWhenLoading) Time.timeScale = 0;
             var depScenes = ResolveDependencyTree(deps);
@@ -184,7 +184,7 @@ namespace BAStudio.SceneDependencies
                     for (int j = 0; j < cache.Count; j++)
                     {
                         if (cache[j] == null) break;
-                        cache[j].GetComponent<SceneDependencyProxy>()?.LoadedAsDep(scene.name, scene.path);
+                        cache[j].GetComponent<SceneDependencyProxy>()?.LoadedAsDep(scene.name, scene.path, session);
                     }
                 }
                 SceneManager.SetActiveScene(SceneManager.GetSceneByPath(accessor));
@@ -225,5 +225,3 @@ namespace BAStudio.SceneDependencies
         }
     }
 }
-
-#endif

@@ -1,5 +1,3 @@
-#if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
-
 using System.Collections;
 using System.Linq;
 using BAStudio.SceneDependencies;
@@ -56,9 +54,7 @@ public class TestLoadBySceneRef
     }
 
     public static string[] names = new string[] { "A" };
-    public static string[] paths = new string[] { "Assets/scene-dependency/Tests/A.unity" };
+    public static string[] paths = new string[] { "Assets/scene-dependency/Legacy/Tests/A.unity", "Assets/scene-dependency/Legacy/Tests/A.Dep1.unity" };
     public static LoadSceneMode[] modes = new LoadSceneMode[] { LoadSceneMode.Additive, LoadSceneMode.Single };
-    public static bool[] reloadOrNot = new bool[] { true, false }; 
+    public static bool[] reloadOrNot = new bool[] { true, false };
 }
-
-#endif

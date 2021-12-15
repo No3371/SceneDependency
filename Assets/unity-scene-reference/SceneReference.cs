@@ -40,7 +40,7 @@ public class SceneReference : ISerializationCallbackReceiver
     {
         get
         {
-            if (!sceneAsset) return false;
+            if (sceneAsset == null) return false;
 
             return sceneAsset is SceneAsset;
         }
@@ -125,7 +125,7 @@ public class SceneReference : ISerializationCallbackReceiver
             EditorSceneManager.MarkAllScenesDirty();
         }
         // Asset takes precendence and overwrites Path
-        else
+        else if (IsValidSceneAsset)
         {
             scenePath = GetScenePathFromAsset();
             nameCache = sceneAsset.name;

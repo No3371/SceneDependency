@@ -9,20 +9,18 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7d63103f2d1d111488a09e0dcca24e74, type: 3}
+  m_Script: {fileID: 11500000, guid: 08a1be4161165b2468d8a01efdcbb4de, type: 3}
   m_Name: a.d.1
   m_EditorClassIdentifier: 
   subject:
     sceneAsset: {fileID: 102900000, guid: 4d0f51d699a57064ca5019a989197269, type: 3}
-    scenePath: Assets/Scenes/A.Dep1.unity
+    scenePath: Assets/scene-dependency/Tests/A.Dep1.unity
     nameCache: A.Dep1
   scenes:
   - sceneAsset: {fileID: 102900000, guid: 0b655de77314722499080858573c54c4, type: 3}
-    scenePath: Assets/Scenes/A.Dep1.Dep.unity
+    scenePath: Assets/scene-dependency/Tests/A.Dep1.Dep.unity
     nameCache: A.Dep1.Dep
   - sceneAsset: {fileID: 102900000, guid: 2294b9e24480f784aad3fcc2efaba7a3, type: 3}
-    scenePath: Assets/Scenes/A.Dep1+2.Dep.unity
+    scenePath: Assets/scene-dependency/Tests/A.Dep1+2.Dep.unity
     nameCache: A.Dep1+2.Dep
-  prefabs:
-  - {fileID: 1503179080879217672, guid: 3a0f6932a11559047b4c185bf7ef5b0b, type: 3}
   NoAutoUnloadInSingleLoadMode: 0

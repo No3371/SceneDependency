@@ -1,9 +1,7 @@
-#if UNITY_EDITOR
 using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using Unity.Addressables;
 
 namespace BAStudio.SceneDependencies
 {
@@ -79,4 +77,3 @@ namespace BAStudio.SceneDependencies
         }
     }
 }
-#endif

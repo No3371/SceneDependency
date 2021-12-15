@@ -1,5 +1,8 @@
 #if UNITY_EDITOR
+using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
+using UnityEditor.Build.Content;
 using UnityEngine;
 
 namespace BAStudio.SceneDependencies
@@ -47,6 +50,24 @@ namespace BAStudio.SceneDependencies
             }
         }
 
+        public static bool Verify ()
+        {
+            bool valid = true;
+            HashSet<string> allScenePaths = new HashSet<string>();
+            foreach (var kvp in Instance.Index)
+            {
+                foreach (var p in SceneDependencyRuntime.ResolveDependencyTree(kvp.Value)) allScenePaths.Add(p);
+            }
+            foreach (var p in allScenePaths)
+            {
+                if (!UnityEditor.EditorBuildSettings.scenes.Any(s => s.path == p && s.enabled))
+                {
+                    Debug.LogErrorFormat("  Not included in build: " + p);
+                    valid = false;
+                }
+            }
+            return valid;
+        }
     }
 
 }

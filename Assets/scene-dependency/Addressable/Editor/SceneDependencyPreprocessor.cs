@@ -2,7 +2,6 @@ using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 
 namespace BAStudio.SceneDependencies
 {

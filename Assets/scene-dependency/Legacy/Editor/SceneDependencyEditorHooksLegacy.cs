@@ -7,6 +7,7 @@ using UnityEngine;
 
 namespace BAStudio.SceneDependencies
 {
+
     [InitializeOnLoad]
     public static class SceneDependencyEditorHooks
     {
@@ -40,7 +41,7 @@ namespace BAStudio.SceneDependencies
                 else
                 {
                     Debug.Log("[SceneDependencies] Adding the dependency config to index...");
-                    SceneDependencyIndexEditorAccess.Instance.Add(path, proxy.config);
+                    SceneDependencyIndexEditorAccess.Instance.Index.Add(path, proxy.config);
                     EditorUtility.SetDirty(SceneDependencyIndexEditorAccess.Instance);
                     AssetDatabase.SaveAssets();
                 }

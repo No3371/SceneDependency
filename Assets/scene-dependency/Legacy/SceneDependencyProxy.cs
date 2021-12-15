@@ -17,7 +17,7 @@ namespace BAStudio.SceneDependencies
         /// </summary>
         /// <param name="masterSceneName"></param>
         /// <param name="masterSceneAcessor">Scene path or address</param>
-        public virtual void LoadedAsDep (string masterSceneName, string masterSceneAcessor) {
+        public virtual void LoadedAsDep (string masterSceneName, string masterSceneAcessor, Session session) {
             Debug.Log("LoadedAsDep: " + this.gameObject.scene.name);
         }
         
