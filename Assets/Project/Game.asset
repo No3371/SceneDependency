@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 08a1be4161165b2468d8a01efdcbb4de, type: 3}
+  m_Name: Game
+  m_EditorClassIdentifier: 
+  enabled: 1
+  subject:
+    sceneAsset: {fileID: 102900000, guid: 8589cb8264aba5243897b504fcde47f1, type: 3}
+    scenePath: Assets/Project/Game.unity
+    nameCache: Game
+  scenes:
+  - sceneAsset: {fileID: 102900000, guid: 5107e67d52e7a7143a3b7bf8db5759e3, type: 3}
+    scenePath: Assets/Project/HUD.unity
+    nameCache: HUD
+  - sceneAsset: {fileID: 102900000, guid: 93921f6e812ebb744a239337392722b9, type: 3}
+    scenePath: Assets/Project/PauseMenu.unity
+    nameCache: PauseMenu
+  - sceneAsset: {fileID: 102900000, guid: 1dd6adc601f2d6a48a274786b24b13f6, type: 3}
+    scenePath: Assets/Project/Base.unity
+    nameCache: Base
+  NoAutoUnloadInSingleLoadMode: 0

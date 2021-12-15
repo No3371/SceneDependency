@@ -79,7 +79,7 @@ namespace BAStudio.SceneDependencies
 
         static IEnumerator SceneWorker (SceneDependencies deps, string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep, AsyncOperationWrapper aow)
         {
-            Session session = new Session();
+            Session session = new Session(accessor, id);
             float cacheTimeScale = Time.timeScale;
             if (zeroTimeScaleWhenLoading) Time.timeScale = 0;
             var depScenes = ResolveDependencyTree(deps);
@@ -176,18 +176,36 @@ namespace BAStudio.SceneDependencies
             aow.value.allowSceneActivation = true;
             aow.value.completed += (h) => {
                 List<GameObject> cache = new List<GameObject>(32);
+                List<SceneDependencyProxy> proxies = new List<SceneDependencyProxy>(32);
+                Scene scene;
                 for (int i = 0; i < depScenes.Count; i++)
                 {
-                    Scene scene = SceneManager.GetSceneByPath(depScenes[i]);
+                    scene = SceneManager.GetSceneByPath(depScenes[i]);
                     cache.Clear();
                     scene.GetRootGameObjects(cache);
                     for (int j = 0; j < cache.Count; j++)
                     {
                         if (cache[j] == null) break;
-                        cache[j].GetComponent<SceneDependencyProxy>()?.LoadedAsDep(scene.name, scene.path, session);
+                        var p = cache[j].GetComponent<SceneDependencyProxy>();
+                        if (p == null) continue;
+                        p.LoadedAsDep(session);
+                        proxies.Add(p);
                     }
                 }
+                foreach (var p in proxies) p.AllDepsReady(session);
                 SceneManager.SetActiveScene(SceneManager.GetSceneByPath(accessor));
+
+                scene = SceneManager.GetSceneByPath(accessor);
+                cache.Clear();
+                scene.GetRootGameObjects(cache);
+                for (int j = 0; j < cache.Count; j++)
+                {
+                    if (cache[j] == null) break;
+                    var p = cache[j].GetComponent<SceneDependencyProxy>();
+                    if (p == null) continue;
+                    p.Loaded(session);
+                    proxies.Add(p);
+                }
             };
             
             if (zeroTimeScaleWhenLoading) Time.timeScale = cacheTimeScale;
@@ -201,7 +219,7 @@ namespace BAStudio.SceneDependencies
             // result.Reverse();
 #if UNITY_EDITOR
             System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.AppendLine("Loading dependencies in order:");
+            sb.AppendLine("Dependencies in order:");
             for (int i = 0; i < result.Count; i++)
             {
                 sb.AppendLine("- " + result[i]);
@@ -223,5 +241,7 @@ namespace BAStudio.SceneDependencies
                 results.Add(subject.scenes[i].ScenePath);
             }
         }
+
+
     }
 }

@@ -1,18 +1,28 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace BAStudio.SceneDependencies
 {
+    [Serializable]
     public class Session
     {
+        public string MasterSceneName { get; private set; }
+        public string MasterSceneAcessor { get; private set; }
         public Dictionary<Type, object> Container { get; private set; }
 
-        public Session()
+        public Session(string masterSceneAcessor, string masterSceneName = null)
         {
             Container = new Dictionary<Type, object>();
+            MasterSceneAcessor = masterSceneAcessor;
+            MasterSceneName = masterSceneName;
         }
 
-        public void Set<T> (T obj) => Container[typeof(T)] = obj;
+        public void Inject<T> (T obj)
+        {
+            Container[typeof(T)] = obj;
+            Debug.Log("Injected: " + typeof(T).Name);
+        }
         public T Get<T>() => (T) Container[typeof(T)];
     }
 }

@@ -16,6 +16,7 @@ namespace BAStudio.SceneDependencies
         {
             EditorSceneManager.sceneSaving += (scene, path) => {
                 if (EditorApplication.isPlaying) return;
+                Debug.Log("[SceneDependencies] Detected scene saving...");
                 var roots = scene.GetRootGameObjects();
                 var proxy = roots.FirstOrDefault(r => r.GetComponent<SceneDependencyProxy>())?.GetComponent<SceneDependencyProxy>();
                 if (proxy == null || proxy.config == null) return;
