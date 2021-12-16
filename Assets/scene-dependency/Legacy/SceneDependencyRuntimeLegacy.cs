@@ -47,7 +47,7 @@ namespace BAStudio.SceneDependencies
             public AsyncOperation value;
         }
 
-        public static bool zeroTimeScaleWhenLoading;
+        public static bool zeroTimeScaleWhenLoading = true;
 
         /// <summary>
         /// 
@@ -241,7 +241,6 @@ namespace BAStudio.SceneDependencies
                 results.Add(subject.scenes[i].ScenePath);
             }
         }
-
 
     }
 }

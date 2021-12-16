@@ -23,6 +23,13 @@ namespace BAStudio.SceneDependencies
             Container[typeof(T)] = obj;
             Debug.Log("Injected: " + typeof(T).Name);
         }
+
+        public void Inject<T, E> (E obj) where E : T
+        {
+            Container[typeof(T)] = obj;
+            Debug.Log("Injected: " + typeof(T).Name);
+        }
+
         public T Get<T>() => (T) Container[typeof(T)];
     }
 }

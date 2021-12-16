@@ -13,18 +13,26 @@ MonoBehaviour:
   m_Name: SceneDependencyIndex
   m_EditorClassIdentifier: 
   index:
-    _Buckets: 0100000002000000ffffffff
-    _HashCodes: 33096e49a1bc550702195407
-    _Next: ffffffff00000000ffffffff
-    _Count: 3
-    _Version: 3
+    _Buckets: ffffffff0300000000000000ffffffff0400000001000000ffffffff
+    _HashCodes: 33096e49a1bc55070219540793cad42b6949db6b0000000000000000
+    _Next: ffffffffffffffffffffffffffffffff020000000000000000000000
+    _Count: 5
+    _Version: 9
     _FreeList: -1
     _FreeCount: 0
     _Keys:
     - Assets/scene-dependency/Legacy/Tests/A.unity
     - Assets/scene-dependency/Legacy/Tests/A.Dep1.unity
     - Assets/scene-dependency/Legacy/Tests/A.Dep2.unity
+    - Assets/Project/MainMenu.unity
+    - Assets/Project/Game.unity
+    - 
+    - 
     _Values:
     - {fileID: 11400000, guid: 42fe2b52f825ee64d80e2a5b1b7190bc, type: 2}
     - {fileID: 11400000, guid: 162e9c71d7a853a41bebdaf70f1f47f2, type: 2}
     - {fileID: 11400000, guid: 5bcc2deb4f9807e40ae13c47be646e88, type: 2}
+    - {fileID: 11400000, guid: 6c8332b1da2b730459aeb4c000874a2f, type: 2}
+    - {fileID: 11400000, guid: af156231844ea314fa22a577653ffbec, type: 2}
+    - {fileID: 0}
+    - {fileID: 0}
