@@ -125,7 +125,7 @@ namespace BAStudio.SceneDependencies
         #else
                 if (runtimeInstance != null) return runtimeInstance;
 
-            #if !SCENE_DEP_OVERRIDE || !SCENE_DEP_LEGACY
+            #if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
                 var r = Resources.LoadAsync<SceneDependencyIndex>("SceneDependencyIndex");
                 r.completed += (_) =>
                 {

@@ -21,10 +21,6 @@ MonoBehaviour:
     m_Address: A/B
     m_ReadOnly: 0
     m_SerializedLabels: []
-  - m_GUID: 46e59aeea73ad7a4da9200491f55991b
-    m_Address: .SceneDepeendencyIndex
-    m_ReadOnly: 0
-    m_SerializedLabels: []
   m_ReadOnly: 0
   m_Settings: {fileID: 11400000, guid: bea75ffad3aa7f9418a55e74a6425c76, type: 2}
   m_SchemaSet:

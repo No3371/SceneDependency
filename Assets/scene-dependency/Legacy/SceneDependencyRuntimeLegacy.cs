@@ -13,14 +13,16 @@ namespace BAStudio.SceneDependencies
 
     public static class SceneDependencyRuntime
     {
-        static SceneDependencyBroker broker;
-        static SceneDependencyBroker Broker
+        static Dictionary<Scene, HashSet<SceneDependencies>> DependenciesMap { get; set; }
+        static Dictionary<SceneDependencies, HashSet<Scene>> DependentsMap { get; set; }
+        static SceneDependenciesMono broker;
+        static SceneDependenciesMono Broker
         {
             get
             {
                 if (broker != null) return broker;
 
-                broker = new GameObject("SceneDependencyBroker", typeof(SceneDependencyBroker)).GetComponent<SceneDependencyBroker>();
+                broker = new GameObject("SceneDependenciesMono", typeof(SceneDependenciesMono)).GetComponent<SceneDependenciesMono>();
                 GameObject.DontDestroyOnLoad(broker);
                 return broker;
             }
@@ -34,12 +36,24 @@ namespace BAStudio.SceneDependencies
             SceneManager.sceneLoaded += (s, mode) => {
                 LastLoadedScene = s;
             };
+            SceneManager.sceneUnloaded += (s) => {
+                if (DependenciesMap.TryGetValue(s, out var deps))
+                foreach (var sd in deps)
+                {
+                    if (DependentsMap.TryGetValue(sd, out var dependents))
+                    {
+                        
+                    }
+                }
+            };
         }
 
         [RuntimeInitializeOnLoadMethod]
         static void Init ()
         {
             if (SceneDependencyIndex.AutoInstance == null) Debug.Log("[SceneDependencies] Index not yet loaded.");
+            if (DependenciesMap == null) DependenciesMap = new Dictionary<Scene, HashSet<SceneDependencies>>();
+            if (DependentsMap   == null) DependentsMap   = new Dictionary<SceneDependencies, HashSet<Scene>>();
         }
 
         public class AsyncOperationWrapper
@@ -124,19 +138,14 @@ namespace BAStudio.SceneDependencies
                 previousActiveScene = SceneManager.GetActiveScene();
             }
 
-
-            float lastCheck = Time.realtimeSinceStartup - 0.19f;
-            while (true)
+            WaitForSecondsRealtime wfsr = new WaitForSecondsRealtime(0.05f);
+            int opCheck = ops.Length;
+            while (opCheck > 0)
             {
-                if (Time.realtimeSinceStartup - lastCheck < 0.1) yield return null;
-                lastCheck = Time.realtimeSinceStartup;
-                int check = ops.Length;
-                for (int i = 0; i < ops.Length; i++)
-                {
-                    if (ops[i] == null || ops[i].isDone) check--;
-                }
-                if (check == 0) break;
-                else yield return null;
+                foreach (var op in ops)
+                    if (op == null || op.isDone) opCheck--;
+                yield return wfsr;
+                opCheck = ops.Length;
             }
 
             for (int i = 0; i < ops.Length; i++) ops[i] = null;
@@ -145,31 +154,27 @@ namespace BAStudio.SceneDependencies
             {
                 if (SceneManager.GetSceneByPath(depScenes[i]).isLoaded)
                 {
-                    #if LOG
-                    Debug.Log(string.Concat("Dep scene is loaded, skip: ", depScenes[i]));
-                    #endif
+        #if LOG
+                    Debug.Log(string.Concat("Dep scene is already loaded, skip: ", depScenes[i]));
+        #endif
                     continue;
                 }
-                #if LOG
+        #if LOG
                 Debug.Log(string.Concat("Loading scene: ", depScenes[i]));
-                #endif
+        #endif
                 ops[i] = SceneManager.LoadSceneAsync(depScenes[i], LoadSceneMode.Additive);
             }
 
-            lastCheck = Time.realtimeSinceStartup - 0.2f;
-            while (true)
+            opCheck = ops.Length;
+            while (opCheck > 0)
             {
-                if (Time.realtimeSinceStartup - lastCheck < 0.1) yield return null;
-                lastCheck = Time.realtimeSinceStartup;
-                int check = ops.Length;
-                for (int i = 0; i < ops.Length; i++)
-                {
-                    if (ops[i] == null || ops[i].isDone) check--;
-                }
-                if (check == 0) break;
-                else yield return null;
+                foreach (var op in ops)
+                    if (op == null || op.isDone) opCheck--;
+                yield return wfsr;
+                opCheck = ops.Length;
             }
 
+            // Unity refuse unloading last loaded scene, so we unload it here.
             if (previousActiveScene.IsValid() && !depScenes.Contains(previousActiveScene.path)) SceneManager.UnloadSceneAsync(previousActiveScene);
 
             aow.value = SceneManager.LoadSceneAsync(accessor, LoadSceneMode.Additive);
