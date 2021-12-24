@@ -5,7 +5,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityObject = UnityEngine.Object;
 
-[CustomPropertyDrawer(typeof(BAStudio.SceneDependencies.DictSD))]
+[CustomPropertyDrawer(typeof(BAStudio.SceneDependencies.StringToSceneDependencies))]
 public class DictSDDrawer : DictionaryDrawer<string, BAStudio.SceneDependencies.SceneDependencies> {}
 public abstract class DictionaryDrawer<TK, TV> : PropertyDrawer
 {

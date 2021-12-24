@@ -9,13 +9,20 @@ using UnityEngine.SceneManagement;
 namespace BAStudio.SceneDependencies
 {
     [Serializable]
-    public class DictSD : SerializableDictionary<string, SceneDependencies> {}
+    public class StringToSceneDependencies : SerializableDictionary<string, SceneDependencies> {}
     public partial class SceneDependencyIndex : ScriptableObject, IPreprocessBuildWithReport
     {
-        [SerializeField]
-        DictSD index;
-        public DictSD Index { get => index; private set => index = value; }
+        [SerializeField] long version;
+        public long Version { get => version; }
 
+        [SerializeField]
+        StringToSceneDependencies index;
+        public StringToSceneDependencies Index { get => index; private set => index = value; }
+
+        void Awake ()
+        {
+            OnIndexCreated(this);
+        }
 
         /// <summary>
         ///
@@ -110,7 +117,31 @@ namespace BAStudio.SceneDependencies
         //     }
         // }
 
+        static void OnIndexCreated (SceneDependencyIndex index)
+        {
+            if (runtimeInstance == null)
+            {
+                runtimeInstance = index;
+                Debug.Log("<color=yellow>[SceneDependencies] Index loaded!</color>");
+                return;
+            }
 
+            if (runtimeInstance == index)
+            {
+                Debug.Log("<color=green>[SceneDependencies] Index already in use.</color>");
+                return;
+            }
+
+            if (index != runtimeInstance && index.Version > runtimeInstance.Version)
+            {
+                runtimeInstance = index;
+                Debug.Log("<color=yellow>[SceneDependencies] Index hijecked!</color>");
+                return;
+            }
+
+            Destroy(index);
+            Debug.Log("<color=grey>[SceneDependencies] Index ditched...</color>");
+        }
         static SceneDependencyIndex runtimeInstance;
         /// <summary>
         /// When accessed at runtime for the first time, this could return null until the index is loaded through Addressables.
@@ -125,19 +156,19 @@ namespace BAStudio.SceneDependencies
         #else
                 if (runtimeInstance != null) return runtimeInstance;
 
-            #if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
+            // #if !SCENE_DEP_OVERRIDE || SCENE_DEP_LEGACY
                 var r = Resources.LoadAsync<SceneDependencyIndex>("SceneDependencyIndex");
                 r.completed += (_) =>
                 {
-                    runtimeInstance = r.asset as SceneDependencyIndex;
+                    OnIndexCreated(r.asset as SceneDependencyIndex);
                 };
-            #else
-                var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>("SceneDependency/Index");
-                aoh.Completed += (h) =>
-                {
-                    runtimeInstance = h.Result;
-                };
-            #endif
+            // #else
+            //     var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>("SceneDependencyIndex");
+            //     aoh.Completed += (h) =>
+            //     {
+            //         OnIndexCreated(h.Result);
+            //     };
+            // #endif
 
                 return runtimeInstance;
         #endif

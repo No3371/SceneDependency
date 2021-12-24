@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using UnityEngine;
 using Object = UnityEngine.Object;
+using UnityEngine.Serialization;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -49,9 +50,12 @@ public class SceneReference : ISerializationCallbackReceiver
 
     // This should only ever be set during serialization/deserialization!
     [SerializeField]
-    private string scenePath = string.Empty;
+    [FormerlySerializedAs("scenePath")]
+    private string sceneKey = string.Empty;
     [SerializeField]
     private string nameCache;
+    [SerializeField]
+    private bool IsAddressable;
 
     // Use this when you want to actually have the scene path
     public string ScenePath
@@ -69,14 +73,14 @@ public class SceneReference : ISerializationCallbackReceiver
         }
         set
         {
-            scenePath = value;
+            sceneKey = value;
 #if UNITY_EDITOR
             sceneAsset = GetSceneAssetFromPath();
 #endif
         }
     }
 
-    public string StoredScenePath { get => scenePath; }
+    public string StoredScenePath { get => sceneKey; }
     public string NameCache { get => nameCache; }
 
     public static implicit operator string(SceneReference sceneReference)
@@ -106,7 +110,7 @@ public class SceneReference : ISerializationCallbackReceiver
 #if UNITY_EDITOR
     private SceneAsset GetSceneAssetFromPath()
     {
-        return string.IsNullOrEmpty(scenePath) ? null : AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath);
+        return string.IsNullOrEmpty(sceneKey) ? null : AssetDatabase.LoadAssetAtPath<SceneAsset>(sceneKey);
     }
 
     private string GetScenePathFromAsset()
@@ -117,17 +121,17 @@ public class SceneReference : ISerializationCallbackReceiver
     private void HandleBeforeSerialize()
     {
         // Asset is invalid but have Path to try and recover from
-        if (IsValidSceneAsset == false && string.IsNullOrEmpty(scenePath) == false)
+        if (IsValidSceneAsset == false && string.IsNullOrEmpty(sceneKey) == false)
         {
             sceneAsset = GetSceneAssetFromPath();
-            if (sceneAsset == null) scenePath = string.Empty;
+            if (sceneAsset == null) sceneKey = string.Empty;
 
             EditorSceneManager.MarkAllScenesDirty();
         }
         // Asset takes precendence and overwrites Path
         else if (IsValidSceneAsset)
         {
-            scenePath = GetScenePathFromAsset();
+            sceneKey = GetScenePathFromAsset();
             nameCache = sceneAsset.name;
         }
     }
@@ -139,11 +143,11 @@ public class SceneReference : ISerializationCallbackReceiver
         if (IsValidSceneAsset) return;
 
         // Asset is invalid but have path to try and recover from
-        if (string.IsNullOrEmpty(scenePath)) return;
+        if (string.IsNullOrEmpty(sceneKey)) return;
 
         sceneAsset = GetSceneAssetFromPath();
         // No asset found, path was invalid. Make sure we don't carry over the old invalid path
-        if (!sceneAsset) scenePath = string.Empty;
+        if (!sceneAsset) sceneKey = string.Empty;
 
         if (!Application.isPlaying) EditorSceneManager.MarkAllScenesDirty();
     }
