@@ -21,6 +21,10 @@ MonoBehaviour:
     m_Address: A/B
     m_ReadOnly: 0
     m_SerializedLabels: []
+  - m_GUID: d078e2122bc9d244d937431d270e7fd2
+    m_Address: Dev/TestScene
+    m_ReadOnly: 0
+    m_SerializedLabels: []
   m_ReadOnly: 0
   m_Settings: {fileID: 11400000, guid: bea75ffad3aa7f9418a55e74a6425c76, type: 2}
   m_SchemaSet:
