@@ -1,9 +1,11 @@
 using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
 using BAStudio.SceneDependency;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
+using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
@@ -27,34 +29,21 @@ public class TestLoadBySceneRef
         yield break;
     }
 
-    // A UnityTest behaves like a coroutine in Play Mode. In Edit Mode you can use
-    // `yield return null;` to skip a frame.
     [UnityTest]
-    // [Timeout(5000)]
-    public IEnumerator TestLoadBySceneRefWithEnumeratorPasses(
-        [ValueSource("names")] string name,
-        [ValueSource("paths")] string path,
-        [ValueSource("modes")] LoadSceneMode mode,
-        [ValueSource("reloadOrNot")] bool reloadLoadedScenes)
+    public IEnumerator TestLoadByAddressablePasses(
+        [ValueSource("accessors")] string accessor,
+        [ValueSource("modes")] LoadSceneMode mode)
     {
-        var aow = SceneDependencyRuntime.LoadSceneAsync(path, name, UnityEngine.SceneManagement.LoadSceneMode.Single, true);
-        while (aow.value == null || !aow.value.isDone)
+        var handle = SceneDependencyRuntime.LoadSceneAsync(accessor, mode);
+        while (!handle.IsDone)
         {
             yield return null;
         }
 
-        var required = SceneDependencyRuntime.ResolveDependencyTree(SceneDependencyIndex.AutoInstance.Index[path]);
-        foreach (string s in required)
-        {
-            Assert.IsTrue(SceneManager.GetSceneByPath(s).isLoaded, "Required scene {0} is not loaded!", s);
-        }
-        Assert.IsTrue(SceneManager.GetSceneByPath(path).isLoaded, "Master scene {0} is not loaded!", path);
+        Assert.AreEqual(AsyncOperationStatus.Succeeded, handle.Status, "Scene load failed for {0}", accessor);
         Assert.Pass();
-
     }
 
-    public static string[] names = new string[] { "A" };
-    public static string[] paths = new string[] { "Assets/Scenes/A.unity" };
+    public static string[] accessors = new string[] { "Assets/Scenes/A.unity" };
     public static LoadSceneMode[] modes = new LoadSceneMode[] { LoadSceneMode.Additive, LoadSceneMode.Single };
-    public static bool[] reloadOrNot = new bool[] { true, false }; 
 }

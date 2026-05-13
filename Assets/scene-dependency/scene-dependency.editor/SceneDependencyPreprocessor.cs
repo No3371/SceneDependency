@@ -2,31 +2,26 @@ using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
-using UnityEditor.AddressableAssets;
 
 namespace BAStudio.SceneDependency
 {
-    [RequireComponent(typeof(SceneDependencyProxy))]
-    public class SceneDependencyPreprocessor : MonoBehaviour, IPreprocessBuildWithReport
+    public class SceneDependencyPreprocessor : IPreprocessBuildWithReport
     {
         public int callbackOrder => 10;
 
         public void OnPreprocessBuild(BuildReport report)
         {
+            var index = SceneDependencyIndexEditorAccess.Instance;
+            if (index == null)
+            {
+                Debug.LogWarning("[SceneDependency] Index not found at build time.");
+                return;
+            }
 
-            SceneDependencyProxy holder = this.GetComponent<SceneDependencyProxy>();
-            holder.forceReference = SceneDependencyProxy.cachedForceReference = SceneDependencyIndexEditorAccess.Instance;
-        #if SD_RES_LEGACY
-            SceneDependencyIndexEditorAccess.Instance.Index.Add(holder.config.subject.ScenePath, holder.config);
-        #else
-            SceneDependencyIndexEditorAccess.Instance.Index.Add(
-                UnityEditor.AddressableAssets.AddressableAssetSettingsDefaultObject.Settings.FindAssetEntry(holder.config.subject.AssetGUID).address,
-                holder.config
-            );
-        #endif
-            
+            if (index.Index.Count == 0)
+            {
+                Debug.LogWarning("[SceneDependency] Index is empty at build time. Save scenes with SceneDependencyProxy to populate it.");
+            }
         }
-
     }
 }
