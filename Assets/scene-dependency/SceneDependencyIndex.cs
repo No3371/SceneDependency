@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.Serialization;
 
 namespace BAStudio.SceneDependency
 {
@@ -11,6 +12,7 @@ namespace BAStudio.SceneDependency
 
         [SerializeField]
         [HideInInspector]
+        [FormerlySerializedAs("cachedAddresses")]
         List<string> cachedGUIDs;
         [SerializeField]
         List<SceneDependency> sceneDependencies;

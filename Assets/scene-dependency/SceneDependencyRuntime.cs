@@ -53,7 +53,7 @@ namespace BAStudio.SceneDependency
             {
                 var directHandle = Addressables.LoadSceneAsync(sceneGUID, mode);
                 loadedSceneHandles[sceneGUID] = directHandle;
-                await directHandle.Task;
+                await AsyncOpToTask(directHandle);
                 return directHandle;
             }
 
@@ -73,12 +73,7 @@ namespace BAStudio.SceneDependency
                     if (loadedGUID == sceneGUID) continue;
 
                     bool isDep = loadedGUID != null && depGUIDs.Contains(loadedGUID);
-                    if (isDep && !reloadLoadedDep)
-                    {
-                        if (loadedGUID != null && index.TryGet(loadedGUID, out var depConfig)
-                            && depConfig != null && depConfig.NoAutoUnloadInSingleLoadMode) continue;
-                        continue;
-                    }
+                    if (isDep && !reloadLoadedDep) continue;
 
                     if (loadedGUID != null && index.TryGet(loadedGUID, out var loadedConfig)
                         && loadedConfig != null && loadedConfig.NoAutoUnloadInSingleLoadMode) continue;
@@ -86,14 +81,14 @@ namespace BAStudio.SceneDependency
                     if (loadedGUID != null && loadedSceneHandles.TryGetValue(loadedGUID, out var existingHandle))
                     {
                         if (existingHandle.IsValid())
-                            unloadTasks.Add(Addressables.UnloadSceneAsync(existingHandle).Task);
+                            unloadTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(existingHandle)));
                         loadedSceneHandles.Remove(loadedGUID);
                     }
                     else
                     {
                         var op = SceneManager.UnloadSceneAsync(scene);
                         if (op != null)
-                            unloadTasks.Add(ToTask(op));
+                            unloadTasks.Add(AsyncOpToTask(op));
                     }
                 }
                 if (unloadTasks.Count > 0)
@@ -109,7 +104,7 @@ namespace BAStudio.SceneDependency
 
                 var depHandle = Addressables.LoadSceneAsync(guid, LoadSceneMode.Additive);
                 loadedSceneHandles[guid] = depHandle;
-                depLoadTasks.Add(depHandle.Task);
+                depLoadTasks.Add(AsyncOpToTask(depHandle));
             }
             if (depLoadTasks.Count > 0)
                 await Task.WhenAll(depLoadTasks);
@@ -117,7 +112,7 @@ namespace BAStudio.SceneDependency
             // Phase 3: Load master scene
             var masterHandle = Addressables.LoadSceneAsync(sceneGUID, LoadSceneMode.Additive);
             loadedSceneHandles[sceneGUID] = masterHandle;
-            await masterHandle.Task;
+            await AsyncOpToTask(masterHandle);
 
             // Phase 4: Callbacks and set active
             var masterScene = masterHandle.Result.Scene;
@@ -145,7 +140,7 @@ namespace BAStudio.SceneDependency
         {
             if (loadedSceneHandles.TryGetValue(sceneGUID, out var handle) && handle.IsValid())
             {
-                await Addressables.UnloadSceneAsync(handle).Task;
+                await AsyncOpToTask(Addressables.UnloadSceneAsync(handle));
                 loadedSceneHandles.Remove(sceneGUID);
             }
         }
@@ -190,23 +185,66 @@ namespace BAStudio.SceneDependency
             }
         }
 
-        // --- Utility ---
+        // --- Async helpers (compatible with all Addressables versions) ---
+
+        static Task<T> AsyncOpToTask<T>(AsyncOperationHandle<T> handle)
+        {
+            if (handle.IsDone)
+            {
+                if (handle.Status == AsyncOperationStatus.Succeeded)
+                    return Task.FromResult(handle.Result);
+                return Task.FromException<T>(handle.OperationException ??
+                    new Exception("[SceneDependency] Addressables operation failed: " + handle.Status));
+            }
+            var tcs = new TaskCompletionSource<T>();
+            handle.Completed += h =>
+            {
+                if (h.Status == AsyncOperationStatus.Succeeded)
+                    tcs.SetResult(h.Result);
+                else
+                    tcs.SetException(h.OperationException ??
+                        new Exception("[SceneDependency] Addressables operation failed: " + h.Status));
+            };
+            return tcs.Task;
+        }
+
+        static Task AsyncOpToTask(AsyncOperationHandle handle)
+        {
+            if (handle.IsDone)
+            {
+                if (handle.Status == AsyncOperationStatus.Succeeded)
+                    return Task.CompletedTask;
+                return Task.FromException(handle.OperationException ??
+                    new Exception("[SceneDependency] Addressables operation failed: " + handle.Status));
+            }
+            var tcs = new TaskCompletionSource<bool>();
+            handle.Completed += h =>
+            {
+                if (h.Status == AsyncOperationStatus.Succeeded)
+                    tcs.SetResult(true);
+                else
+                    tcs.SetException(h.OperationException ??
+                        new Exception("[SceneDependency] Addressables operation failed: " + h.Status));
+            };
+            return tcs.Task;
+        }
+
+        static Task AsyncOpToTask(AsyncOperation op)
+        {
+            if (op.isDone) return Task.CompletedTask;
+            var tcs = new TaskCompletionSource<bool>();
+            op.completed += _ => tcs.SetResult(true);
+            return tcs.Task;
+        }
 
         static string FindGUIDForLoadedScene(Scene scene)
         {
             foreach (var kvp in loadedSceneHandles)
             {
-                if (kvp.Value.IsValid() && kvp.Value.Result.Scene == scene)
+                if (kvp.Value.IsValid() && kvp.Value.IsDone && kvp.Value.Result.Scene == scene)
                     return kvp.Key;
             }
             return null;
-        }
-
-        static Task ToTask(AsyncOperation op)
-        {
-            var tcs = new TaskCompletionSource<bool>();
-            op.completed += _ => tcs.SetResult(true);
-            return tcs.Task;
         }
     }
 }

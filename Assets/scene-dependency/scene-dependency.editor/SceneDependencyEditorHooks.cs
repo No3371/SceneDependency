@@ -40,6 +40,7 @@ namespace BAStudio.SceneDependency
                     throw new System.Exception("[SceneDependency] Saving scene but target config subject is not equal to this scene!");
                 }
 
+                ValidateDepsAddressable(proxy.config, addrDefaultSettings);
                 EnsureIndexAddressable(addrDefaultSettings, sdGroup);
 
                 if (SceneDependencyIndexEditorAccess.Instance.ContainsKey(sceneGUID))
@@ -75,6 +76,26 @@ namespace BAStudio.SceneDependency
             else if (!entry.labels.Contains(SceneDependencyIndex.AddressableLabel))
             {
                 entry.SetLabel(SceneDependencyIndex.AddressableLabel, true, true);
+            }
+        }
+
+        static void ValidateDepsAddressable(SceneDependency config,
+            UnityEditor.AddressableAssets.Settings.AddressableAssetSettings settings)
+        {
+            if (config.scenes == null) return;
+            for (int i = 0; i < config.scenes.Length; i++)
+            {
+                var depRef = config.scenes[i];
+                if (depRef == null || string.IsNullOrEmpty(depRef.AssetGUID)) continue;
+                var entry = settings.FindAssetEntry(depRef.AssetGUID);
+                if (entry == null)
+                {
+                    var depPath = AssetDatabase.GUIDToAssetPath(depRef.AssetGUID);
+                    Debug.LogWarning(string.Format(
+                        "[SceneDependency] Dependency scene '{0}' (GUID: {1}) is not marked as Addressable. " +
+                        "It will fail to load at runtime. Mark it Addressable in the Addressables Groups window.",
+                        depPath, depRef.AssetGUID));
+                }
             }
         }
 
