@@ -7,9 +7,11 @@ namespace BAStudio.SceneDependency
 {
     public class SceneDependencyIndex : ScriptableObject, ISerializationCallbackReceiver
     {
+        public const string AddressableLabel = "SceneDependency.Index";
+
         [SerializeField]
         [HideInInspector]
-        List<string> cachedAddresses;
+        List<string> cachedGUIDs;
         [SerializeField]
         List<SceneDependency> sceneDependencies;
         [NonSerialized]
@@ -28,27 +30,37 @@ namespace BAStudio.SceneDependency
             }
         }
 
-#if UNITY_EDITOR
-        public void Add (string address, SceneDependency deps)
+        public bool TryGet(string guid, out SceneDependency deps)
         {
-            Index.Add(address, deps);
+            return Index.TryGetValue(guid, out deps);
+        }
+
+        public bool ContainsKey(string guid)
+        {
+            return Index.ContainsKey(guid);
+        }
+
+#if UNITY_EDITOR
+        public void Add (string guid, SceneDependency deps)
+        {
+            Index.Add(guid, deps);
         }
 #endif
 
         void PopulateIndex ()
         {
-            if (sceneDependencies == null || cachedAddresses == null) return;
+            if (sceneDependencies == null || cachedGUIDs == null) return;
             for (int i = 0; i < sceneDependencies.Count; i++)
             {
-                if (index.ContainsKey(cachedAddresses[i]))
+                if (index.ContainsKey(cachedGUIDs[i]))
                 {
-                    Debug.LogErrorFormat("[SceneDependency] Found duplicate SceneDependency for {0}, removing...", cachedAddresses[i]);
+                    Debug.LogErrorFormat("[SceneDependency] Found duplicate SceneDependency for GUID {0}, removing...", cachedGUIDs[i]);
                     sceneDependencies.RemoveAt(i);
-                    cachedAddresses.RemoveAt(i);
+                    cachedGUIDs.RemoveAt(i);
                     i--;
                     continue;
                 }
-                index.Add(cachedAddresses[i], sceneDependencies[i]);
+                index.Add(cachedGUIDs[i], sceneDependencies[i]);
             }
         }
 
@@ -65,16 +77,22 @@ namespace BAStudio.SceneDependency
 
             if (sceneDependencies == null) sceneDependencies = new List<SceneDependency>();
             else sceneDependencies.Clear();
-            if (cachedAddresses == null) cachedAddresses = new List<string>();
-            else cachedAddresses.Clear();
+            if (cachedGUIDs == null) cachedGUIDs = new List<string>();
+            else cachedGUIDs.Clear();
             foreach (var kvp in index)
             {
                 sceneDependencies.Add(kvp.Value);
-                cachedAddresses.Add(kvp.Key);
+                cachedGUIDs.Add(kvp.Key);
             }
         }
 
         static SceneDependencyIndex runtimeInstance;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            runtimeInstance = null;
+        }
 
         public static SceneDependencyIndex AutoInstance
         {
@@ -85,10 +103,13 @@ namespace BAStudio.SceneDependency
 #else
                 if (runtimeInstance != null) return runtimeInstance;
 
-                var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(".SceneDependencyIndex");
+                var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel);
                 aoh.Completed += (h) =>
                 {
-                    runtimeInstance = h.Result;
+                    if (h.Status == UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationStatus.Succeeded)
+                        runtimeInstance = h.Result;
+                    else
+                        Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
                 };
 
                 return runtimeInstance;

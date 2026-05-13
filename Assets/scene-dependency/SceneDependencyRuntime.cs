@@ -18,7 +18,7 @@ namespace BAStudio.SceneDependency
         public static AsyncOperationHandle<SceneInstance> LoadSceneAsync (string accessor, LoadSceneMode mode)
         {
             if (SceneDependencyIndex.AutoInstance == null) throw new System.Exception("[SceneDependency] Please make sure SceneDependency is initialized.");
-            if (!SceneDependencyIndex.AutoInstance.Index.TryGetValue(accessor, out SceneDependency deps) || deps == null)
+            if (!SceneDependencyIndex.AutoInstance.TryGet(accessor, out SceneDependency deps) || deps == null)
             {
                 return Addressables.LoadSceneAsync(accessor, mode);
             }

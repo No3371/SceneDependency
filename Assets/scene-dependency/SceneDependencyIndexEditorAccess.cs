@@ -19,6 +19,13 @@ namespace BAStudio.SceneDependency
 
         public static SceneDependencyIndex instance;
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
+        {
+            instance = null;
+            indexAssetGUID = null;
+        }
+
         public static SceneDependencyIndex Instance
         {
             get
