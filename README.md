@@ -1,12 +1,13 @@
-# SceneDependency (WIP)
-- Automatically build dependencies index everytime a scene is saved, and pack all scenes' dependencies configuration into one single asset.
-- The saved dependencies is used when `SceneDependencyRuntime.LoadSceneAsync` is called, all the dependencies will be prepared before the subject scene is loaded.
-- Should be highly compatible to all kinds of project setups.
-- Supports both Unity's built-in system (SceneManager) ~~and Addressables~~ (Not implemented as for now, it's really hard to design a structure and interface that can works for both systems due to the huge difference between Addressable and SceneManager).
+# SceneDependency
 
-# Example
+Automatic scene dependency management for Unity, built on Addressables.
 
-Depedendency diagram:
+- Automatically builds a dependency index every time a scene is saved
+- When `SceneDependencyRuntime.LoadSceneAsync` is called, all dependencies (including transitive) are loaded before the subject scene
+- Fully async/await API returning `AsyncOperationHandle<SceneInstance>`
+- Works in Editor play mode, fast enter play mode (no domain reload), and player builds
+
+## Dependency diagram example
 
 ```
 A  
@@ -18,14 +19,31 @@ A
    └──A.Dep1+2.Dep (Depended by both A.Dep1 and A.Dep2)  
 ```
 
-We execute `SceneDependencyRuntime.LoadSceneAsync`, targeting scene `A`.
+```csharp
+var handle = await SceneDependencyRuntime.LoadSceneAsync(sceneRef, LoadSceneMode.Single);
+// All deps loaded, master scene active. Store handle for later unload:
+await SceneDependencyRuntime.UnloadSceneAsync(sceneRef);
+```
 
 ![](Docs/uk1ukKWEsY.gif)
 
-## Usage
-- After importing this library, it hooks into scene saving whenever Unity recompiles.
-- When a scene is saved, it checks if there's a `SceneDependencyProxy` and does the proxy pointing to a valid `SceneDependency` scriptable object.
-- If so, it will make sure this scene is indexed and saved into the `SceneDependencyIndex` scriptable object, the object is project level Singleton.
-- As long as the `SceneDependencyIndex` asset is included in build/addressables, all `SceneDependency` should be included as well.
-- When `SceneDependencyRuntime.LoadSceneAsync` is called, it lookup all the scenes that needs to be loaded (includnig deps of deps of deps... etc.) then load all of them before loading the requested scene.
-- So it's very easy, create `SceneDependency` scriptable object for every scene that you want to specify its dependencies and add a `SceneDependencyProxy` with the `SceneDependency` referenced. Save. Done.
+## Setup
+
+1. **Create a `SceneDependency` ScriptableObject** for every scene that has dependencies (right-click > Create > SceneDependency)
+2. **Configure it**: set the `subject` AssetReference to the scene itself, and `scenes` to its dependencies. All referenced scenes must be marked Addressable.
+3. **Add a `SceneDependencyProxy`** MonoBehaviour to a root GameObject in the scene, referencing the `SceneDependency` config. This is optional if you don't need the `LoadedAsDep` callback.
+4. **Save the scene**. The editor hook automatically indexes the dependency and ensures the `SceneDependencyIndex` asset is Addressable with the label `SceneDependency.Index`.
+5. **Call `SceneDependencyRuntime.LoadSceneAsync`** at runtime. The framework resolves the full dependency tree (including deps of deps), loads them in parallel, then loads the master scene.
+
+## Requirements
+
+- Unity Addressables package (`com.unity.addressables`)
+- All scenes referenced in dependency configs must be marked as Addressable assets
+
+## How it works
+
+- The `SceneDependencyIndex` is a project-level singleton ScriptableObject mapping scene asset GUIDs to their dependency configs
+- In Editor, the index is accessed directly via `AssetDatabase`. In player builds, it's loaded by Addressable label
+- The runtime resolves dependencies recursively (leaf-first, diamond-safe) and loads them via `Addressables.LoadSceneAsync`
+- All loaded scene handles are tracked for proper `Addressables.UnloadSceneAsync` cleanup
+- Static state is reset via `[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]` for fast enter play mode compatibility
