@@ -13,27 +13,11 @@ namespace BAStudio.SceneDependency
     {
         static Dictionary<string, AsyncOperationHandle<SceneInstance>> loadedSceneHandles =
             new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
-        static Scene lastLoadedScene;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStaticState()
         {
-            SceneManager.sceneLoaded -= OnSceneLoaded;
             loadedSceneHandles = new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
-            lastLoadedScene = default;
-        }
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        static void Init()
-        {
-            if (SceneDependencyIndex.AutoInstance == null)
-                Debug.Log("[SceneDependency] Index not yet loaded.");
-            SceneManager.sceneLoaded += OnSceneLoaded;
-        }
-
-        static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-        {
-            lastLoadedScene = scene;
         }
 
         public static async Task<AsyncOperationHandle<SceneInstance>> LoadSceneAsync(
@@ -45,7 +29,7 @@ namespace BAStudio.SceneDependency
         public static async Task<AsyncOperationHandle<SceneInstance>> LoadSceneAsync(
             string sceneGUID, LoadSceneMode mode, bool reloadLoadedDep = false)
         {
-            var index = SceneDependencyIndex.AutoInstance;
+            var index = await SceneDependencyIndex.EnsureInitializedAsync();
             if (index == null)
                 throw new InvalidOperationException("[SceneDependency] Index not loaded. Ensure SceneDependencyIndex is available.");
 
@@ -126,7 +110,7 @@ namespace BAStudio.SceneDependency
                 depScene.GetRootGameObjects(goCache);
                 foreach (var go in goCache)
                 {
-                    if (go == null) break;
+                    if (go == null) continue;
                     go.GetComponent<SceneDependencyProxy>()?.LoadedAsDep(masterScene.name, sceneGUID);
                 }
             }

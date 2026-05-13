@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.Serialization;
 
 namespace BAStudio.SceneDependency
@@ -52,14 +54,12 @@ namespace BAStudio.SceneDependency
         void PopulateIndex ()
         {
             if (sceneDependencies == null || cachedGUIDs == null) return;
-            for (int i = 0; i < sceneDependencies.Count; i++)
+            int count = Mathf.Min(sceneDependencies.Count, cachedGUIDs.Count);
+            for (int i = 0; i < count; i++)
             {
                 if (index.ContainsKey(cachedGUIDs[i]))
                 {
-                    Debug.LogErrorFormat("[SceneDependency] Found duplicate SceneDependency for GUID {0}, removing...", cachedGUIDs[i]);
-                    sceneDependencies.RemoveAt(i);
-                    cachedGUIDs.RemoveAt(i);
-                    i--;
+                    Debug.LogErrorFormat("[SceneDependency] Found duplicate SceneDependency for GUID {0}, skipping.", cachedGUIDs[i]);
                     continue;
                 }
                 index.Add(cachedGUIDs[i], sceneDependencies[i]);
@@ -89,11 +89,13 @@ namespace BAStudio.SceneDependency
         }
 
         static SceneDependencyIndex runtimeInstance;
+        static Task<SceneDependencyIndex> initTask;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
             runtimeInstance = null;
+            initTask = null;
         }
 
         public static SceneDependencyIndex AutoInstance
@@ -103,20 +105,40 @@ namespace BAStudio.SceneDependency
 #if UNITY_EDITOR
                 return SceneDependencyIndexEditorAccess.Instance;
 #else
-                if (runtimeInstance != null) return runtimeInstance;
-
-                var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel);
-                aoh.Completed += (h) =>
-                {
-                    if (h.Status == UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationStatus.Succeeded)
-                        runtimeInstance = h.Result;
-                    else
-                        Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
-                };
-
                 return runtimeInstance;
 #endif
             }
+        }
+
+        public static async Task<SceneDependencyIndex> EnsureInitializedAsync()
+        {
+#if UNITY_EDITOR
+            return SceneDependencyIndexEditorAccess.Instance;
+#else
+            if (runtimeInstance != null) return runtimeInstance;
+            if (initTask != null) return await initTask;
+
+            var tcs = new TaskCompletionSource<SceneDependencyIndex>();
+            initTask = tcs.Task;
+
+            var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel);
+            aoh.Completed += h =>
+            {
+                if (h.Status == AsyncOperationStatus.Succeeded)
+                {
+                    runtimeInstance = h.Result;
+                    tcs.SetResult(h.Result);
+                }
+                else
+                {
+                    Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
+                    tcs.SetException(h.OperationException ??
+                        new Exception("[SceneDependency] Failed to load index."));
+                }
+            };
+
+            return await tcs.Task;
+#endif
         }
     }
 }

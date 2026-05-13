@@ -45,6 +45,9 @@ public class TestLoadByAddressable
         var handle = task.Result;
         Assert.AreEqual(AsyncOperationStatus.Succeeded, handle.Status, "Scene load failed for GUID {0}", sceneGUID);
 
+        var masterScene = handle.Result.Scene;
+        Assert.IsTrue(masterScene.IsValid() && masterScene.isLoaded, "Master scene should be loaded");
+
         var index = SceneDependencyIndex.AutoInstance;
         if (index != null && index.TryGet(sceneGUID, out var deps) && deps != null && deps.scenes.Length > 0)
         {
@@ -54,11 +57,11 @@ public class TestLoadByAddressable
                 bool found = false;
                 for (int i = 0; i < SceneManager.sceneCount; i++)
                 {
-                    if (SceneManager.GetSceneAt(i).isLoaded)
-                    {
-                        found = true;
-                        break;
-                    }
+                    var s = SceneManager.GetSceneAt(i);
+                    if (!s.isLoaded) continue;
+                    if (s.name == masterScene.name) continue;
+                    found = true;
+                    break;
                 }
                 Assert.IsTrue(found, "Required dep scene with GUID {0} is not loaded!", depGUID);
             }
@@ -67,6 +70,7 @@ public class TestLoadByAddressable
         Assert.Pass();
     }
 
+    // Populate with actual Addressable scene GUIDs from your project to enable these tests.
     public static string[] sceneGUIDs = new string[] { };
     public static LoadSceneMode[] modes = new LoadSceneMode[] { LoadSceneMode.Additive, LoadSceneMode.Single };
 }
