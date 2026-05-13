@@ -41,7 +41,7 @@ namespace BAStudio.SceneDependency
                 return directHandle;
             }
 
-            var depGUIDs = ResolveDependencyTree(deps);
+            var depGUIDs = ResolveDependencyTree(deps, index);
 
             // Phase 1: Unload (Single mode)
             if (mode == LoadSceneMode.Single)
@@ -79,45 +79,64 @@ namespace BAStudio.SceneDependency
                     await Task.WhenAll(unloadTasks);
             }
 
-            // Phase 2: Load dependencies in parallel
-            var depLoadTasks = new List<Task>();
-            foreach (var guid in depGUIDs)
+            var handlesAllocatedThisCall = new List<string>();
+            try
             {
-                if (loadedSceneHandles.ContainsKey(guid) && loadedSceneHandles[guid].IsValid())
-                    continue;
-
-                var depHandle = Addressables.LoadSceneAsync(guid, LoadSceneMode.Additive);
-                loadedSceneHandles[guid] = depHandle;
-                depLoadTasks.Add(AsyncOpToTask(depHandle));
-            }
-            if (depLoadTasks.Count > 0)
-                await Task.WhenAll(depLoadTasks);
-
-            // Phase 3: Load master scene
-            var masterHandle = Addressables.LoadSceneAsync(sceneGUID, LoadSceneMode.Additive);
-            loadedSceneHandles[sceneGUID] = masterHandle;
-            await AsyncOpToTask(masterHandle);
-
-            // Phase 4: Callbacks and set active
-            var masterScene = masterHandle.Result.Scene;
-            var goCache = new List<GameObject>(32);
-            foreach (var guid in depGUIDs)
-            {
-                if (!loadedSceneHandles.TryGetValue(guid, out var dh) || !dh.IsValid()) continue;
-                var depScene = dh.Result.Scene;
-                if (!depScene.IsValid() || !depScene.isLoaded) continue;
-                goCache.Clear();
-                depScene.GetRootGameObjects(goCache);
-                foreach (var go in goCache)
+                // Phase 2: Load dependencies in parallel
+                var depLoadTasks = new List<Task>();
+                foreach (var guid in depGUIDs)
                 {
-                    if (go == null) continue;
-                    go.GetComponent<SceneDependencyProxy>()?.LoadedAsDep(masterScene.name, sceneGUID);
-                }
-            }
-            if (masterScene.IsValid())
-                SceneManager.SetActiveScene(masterScene);
+                    if (loadedSceneHandles.ContainsKey(guid) && loadedSceneHandles[guid].IsValid())
+                        continue;
 
-            return masterHandle;
+                    var depHandle = Addressables.LoadSceneAsync(guid, LoadSceneMode.Additive);
+                    loadedSceneHandles[guid] = depHandle;
+                    handlesAllocatedThisCall.Add(guid);
+                    depLoadTasks.Add(AsyncOpToTask(depHandle));
+                }
+                if (depLoadTasks.Count > 0)
+                    await Task.WhenAll(depLoadTasks);
+
+                // Phase 3: Load master scene
+                var masterHandle = Addressables.LoadSceneAsync(sceneGUID, LoadSceneMode.Additive);
+                loadedSceneHandles[sceneGUID] = masterHandle;
+                handlesAllocatedThisCall.Add(sceneGUID);
+                await AsyncOpToTask(masterHandle);
+
+                // Phase 4: Callbacks and set active
+                var masterScene = masterHandle.Result.Scene;
+                var goCache = new List<GameObject>(32);
+                foreach (var guid in depGUIDs)
+                {
+                    if (!loadedSceneHandles.TryGetValue(guid, out var dh) || !dh.IsValid()) continue;
+                    var depScene = dh.Result.Scene;
+                    if (!depScene.IsValid() || !depScene.isLoaded) continue;
+                    goCache.Clear();
+                    depScene.GetRootGameObjects(goCache);
+                    foreach (var go in goCache)
+                    {
+                        if (go == null) continue;
+                        go.GetComponent<SceneDependencyProxy>()?.LoadedAsDep(masterScene.name, sceneGUID);
+                    }
+                }
+                if (masterScene.IsValid())
+                    SceneManager.SetActiveScene(masterScene);
+
+                return masterHandle;
+            }
+            catch
+            {
+                foreach (var guid in handlesAllocatedThisCall)
+                {
+                    if (loadedSceneHandles.TryGetValue(guid, out var h) && h.IsValid())
+                    {
+                        try { Addressables.UnloadSceneAsync(h); }
+                        catch (Exception e) { Debug.LogException(e); }
+                    }
+                    loadedSceneHandles.Remove(guid);
+                }
+                throw;
+            }
         }
 
         public static async Task UnloadSceneAsync(string sceneGUID)
@@ -136,11 +155,14 @@ namespace BAStudio.SceneDependency
 
         // --- Dependency resolution ---
 
-        public static List<string> ResolveDependencyTree(SceneDependency root)
+        public static List<string> ResolveDependencyTree(SceneDependency root, SceneDependencyIndex index = null)
         {
+            if (index == null) index = SceneDependencyIndex.AutoInstance;
             HashSet<string> visited = new HashSet<string>();
+            if (root.subject != null && !string.IsNullOrEmpty(root.subject.AssetGUID))
+                visited.Add(root.subject.AssetGUID);
             List<string> result = new List<string>();
-            ResolveRequired(root, visited, result);
+            ResolveRequired(root, index, visited, result);
 #if UNITY_EDITOR
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("[SceneDependency] Loading dependencies in order:");
@@ -151,7 +173,7 @@ namespace BAStudio.SceneDependency
             return result;
         }
 
-        static void ResolveRequired(SceneDependency subject, HashSet<string> visited, List<string> result)
+        static void ResolveRequired(SceneDependency subject, SceneDependencyIndex index, HashSet<string> visited, List<string> result)
         {
             if (subject.scenes == null) return;
             for (int i = 0; i < subject.scenes.Length; i++)
@@ -160,10 +182,9 @@ namespace BAStudio.SceneDependency
                 if (string.IsNullOrEmpty(guid) || visited.Contains(guid)) continue;
                 visited.Add(guid);
 
-                var index = SceneDependencyIndex.AutoInstance;
                 if (index != null && index.TryGet(guid, out SceneDependency subDeps) && subDeps != null)
                 {
-                    ResolveRequired(subDeps, visited, result);
+                    ResolveRequired(subDeps, index, visited, result);
                 }
                 result.Add(guid);
             }

@@ -5,8 +5,15 @@ using UnityEngine.AddressableAssets;
 public class TestLoadByName : MonoBehaviour
 {
     public AssetReference scene;
-    void Start ()
+    async void Start ()
     {
-        SceneDependencyRuntime.LoadSceneAsync(scene, UnityEngine.SceneManagement.LoadSceneMode.Single);
+        try
+        {
+            await SceneDependencyRuntime.LoadSceneAsync(scene, UnityEngine.SceneManagement.LoadSceneMode.Single);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e, this);
+        }
     }
 }

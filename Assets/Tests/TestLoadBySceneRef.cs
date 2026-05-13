@@ -52,19 +52,15 @@ public class TestLoadByAddressable
         if (index != null && index.TryGet(sceneGUID, out var deps) && deps != null && deps.scenes.Length > 0)
         {
             var required = SceneDependencyRuntime.ResolveDependencyTree(deps);
-            foreach (string depGUID in required)
+            int loadedCount = 0;
+            for (int i = 0; i < SceneManager.sceneCount; i++)
             {
-                bool found = false;
-                for (int i = 0; i < SceneManager.sceneCount; i++)
-                {
-                    var s = SceneManager.GetSceneAt(i);
-                    if (!s.isLoaded) continue;
-                    if (s.name == masterScene.name) continue;
-                    found = true;
-                    break;
-                }
-                Assert.IsTrue(found, "Required dep scene with GUID {0} is not loaded!", depGUID);
+                if (SceneManager.GetSceneAt(i).isLoaded)
+                    loadedCount++;
             }
+            Assert.GreaterOrEqual(loadedCount, required.Count + 1,
+                "Expected at least {0} loaded scenes (master + {1} deps), but only {2} loaded",
+                required.Count + 1, required.Count, loadedCount);
         }
 
         Assert.Pass();

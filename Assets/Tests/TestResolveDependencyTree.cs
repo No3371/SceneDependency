@@ -10,11 +10,18 @@ public class TestResolveDependencyTree
     public void FlatDependencies_AllResolved()
     {
         var root = CreateConfig("root-guid", "dep1-guid", "dep2-guid");
-        var result = SceneDependencyRuntime.ResolveDependencyTree(root);
+        try
+        {
+            var result = SceneDependencyRuntime.ResolveDependencyTree(root);
 
-        Assert.AreEqual(2, result.Count);
-        Assert.Contains("dep1-guid", result);
-        Assert.Contains("dep2-guid", result);
+            Assert.AreEqual(2, result.Count);
+            Assert.Contains("dep1-guid", result);
+            Assert.Contains("dep2-guid", result);
+        }
+        finally
+        {
+            Object.DestroyImmediate(root);
+        }
     }
 
     [Test]
@@ -33,14 +40,11 @@ public class TestResolveDependencyTree
         index.Add("c-guid", configC);
         index.Add("d-guid", configD);
 
-        // ResolveDependencyTree uses AutoInstance internally, which uses
-        // SceneDependencyIndexEditorAccess.Instance in editor.
-        // For this unit test we set the editor instance directly.
         SceneDependencyIndexEditorAccess.instance = index;
 
         try
         {
-            var result = SceneDependencyRuntime.ResolveDependencyTree(configA);
+            var result = SceneDependencyRuntime.ResolveDependencyTree(configA, index);
 
             Assert.AreEqual(3, result.Count, "Should have exactly 3 deps (B, C, D)");
             Assert.Contains("b-guid", result);
@@ -60,6 +64,10 @@ public class TestResolveDependencyTree
         {
             SceneDependencyIndexEditorAccess.instance = null;
             Object.DestroyImmediate(index);
+            Object.DestroyImmediate(configA);
+            Object.DestroyImmediate(configB);
+            Object.DestroyImmediate(configC);
+            Object.DestroyImmediate(configD);
         }
     }
 
@@ -67,8 +75,15 @@ public class TestResolveDependencyTree
     public void EmptyScenes_ReturnsEmpty()
     {
         var root = CreateConfig("root-guid");
-        var result = SceneDependencyRuntime.ResolveDependencyTree(root);
-        Assert.AreEqual(0, result.Count);
+        try
+        {
+            var result = SceneDependencyRuntime.ResolveDependencyTree(root);
+            Assert.AreEqual(0, result.Count);
+        }
+        finally
+        {
+            Object.DestroyImmediate(root);
+        }
     }
 
     [Test]

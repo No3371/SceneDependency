@@ -75,12 +75,12 @@ namespace BAStudio.SceneDependency
 
         public void OnBeforeSerialize()
         {
-            if (index == null || index.Count == 0) return;
-
             if (sceneDependencies == null) sceneDependencies = new List<SceneDependency>();
             else sceneDependencies.Clear();
             if (cachedGUIDs == null) cachedGUIDs = new List<string>();
             else cachedGUIDs.Clear();
+
+            if (index == null) return;
             foreach (var kvp in index)
             {
                 sceneDependencies.Add(kvp.Value);
@@ -90,6 +90,7 @@ namespace BAStudio.SceneDependency
 
         static SceneDependencyIndex runtimeInstance;
         static Task<SceneDependencyIndex> initTask;
+        static readonly object initLock = new object();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
@@ -110,34 +111,39 @@ namespace BAStudio.SceneDependency
             }
         }
 
-        public static async Task<SceneDependencyIndex> EnsureInitializedAsync()
+        public static Task<SceneDependencyIndex> EnsureInitializedAsync()
         {
 #if UNITY_EDITOR
-            return SceneDependencyIndexEditorAccess.Instance;
+            return Task.FromResult(SceneDependencyIndexEditorAccess.Instance);
 #else
-            if (runtimeInstance != null) return runtimeInstance;
-            if (initTask != null) return await initTask;
+            if (runtimeInstance != null) return Task.FromResult(runtimeInstance);
 
-            var tcs = new TaskCompletionSource<SceneDependencyIndex>();
-            initTask = tcs.Task;
-
-            var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel);
-            aoh.Completed += h =>
+            lock (initLock)
             {
-                if (h.Status == AsyncOperationStatus.Succeeded)
-                {
-                    runtimeInstance = h.Result;
-                    tcs.SetResult(h.Result);
-                }
-                else
-                {
-                    Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
-                    tcs.SetException(h.OperationException ??
-                        new Exception("[SceneDependency] Failed to load index."));
-                }
-            };
+                if (initTask != null) return initTask;
 
-            return await tcs.Task;
+                var tcs = new TaskCompletionSource<SceneDependencyIndex>();
+                initTask = tcs.Task;
+
+                var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel);
+                aoh.Completed += h =>
+                {
+                    if (h.Status == AsyncOperationStatus.Succeeded)
+                    {
+                        runtimeInstance = h.Result;
+                        tcs.SetResult(h.Result);
+                    }
+                    else
+                    {
+                        Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
+                        initTask = null;
+                        tcs.SetException(h.OperationException ??
+                            new Exception("[SceneDependency] Failed to load index."));
+                    }
+                };
+
+                return tcs.Task;
+            }
 #endif
         }
     }
