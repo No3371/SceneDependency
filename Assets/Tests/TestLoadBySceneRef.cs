@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Linq;
+using System.Threading.Tasks;
 using BAStudio.SceneDependency;
 using NUnit.Framework;
 using UnityEngine;
@@ -9,7 +10,7 @@ using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
-public class TestLoadBySceneRef
+public class TestLoadByAddressable
 {
     public GameObject runnerHost;
 
@@ -19,7 +20,7 @@ public class TestLoadBySceneRef
         if (runnerHost != null) yield break;
         runnerHost = SceneManager.GetActiveScene().GetRootGameObjects().FirstOrDefault(go =>
                     go.GetComponents(typeof(MonoBehaviour)).Any(c => c.GetType().Name == "PlaymodeTestsController"));
-        GameObject.DontDestroyOnLoad(runnerHost);
+        if (runnerHost != null) GameObject.DontDestroyOnLoad(runnerHost);
         yield break;
     }
 
@@ -30,20 +31,42 @@ public class TestLoadBySceneRef
     }
 
     [UnityTest]
-    public IEnumerator TestLoadByAddressablePasses(
-        [ValueSource("accessors")] string accessor,
+    public IEnumerator TestLoadSceneAsyncByGUID(
+        [ValueSource("sceneGUIDs")] string sceneGUID,
         [ValueSource("modes")] LoadSceneMode mode)
     {
-        var handle = SceneDependencyRuntime.LoadSceneAsync(accessor, mode);
-        while (!handle.IsDone)
+        var task = SceneDependencyRuntime.LoadSceneAsync(sceneGUID, mode);
+        while (!task.IsCompleted)
         {
             yield return null;
         }
 
-        Assert.AreEqual(AsyncOperationStatus.Succeeded, handle.Status, "Scene load failed for {0}", accessor);
+        Assert.IsFalse(task.IsFaulted, "LoadSceneAsync faulted: {0}", task.Exception);
+        var handle = task.Result;
+        Assert.AreEqual(AsyncOperationStatus.Succeeded, handle.Status, "Scene load failed for GUID {0}", sceneGUID);
+
+        var index = SceneDependencyIndex.AutoInstance;
+        if (index != null && index.TryGet(sceneGUID, out var deps) && deps != null && deps.scenes.Length > 0)
+        {
+            var required = SceneDependencyRuntime.ResolveDependencyTree(deps);
+            foreach (string depGUID in required)
+            {
+                bool found = false;
+                for (int i = 0; i < SceneManager.sceneCount; i++)
+                {
+                    if (SceneManager.GetSceneAt(i).isLoaded)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                Assert.IsTrue(found, "Required dep scene with GUID {0} is not loaded!", depGUID);
+            }
+        }
+
         Assert.Pass();
     }
 
-    public static string[] accessors = new string[] { "Assets/Scenes/A.unity" };
+    public static string[] sceneGUIDs = new string[] { };
     public static LoadSceneMode[] modes = new LoadSceneMode[] { LoadSceneMode.Additive, LoadSceneMode.Single };
 }
