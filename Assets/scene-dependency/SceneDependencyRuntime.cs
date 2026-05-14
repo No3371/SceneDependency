@@ -38,9 +38,24 @@ namespace BAStudio.SceneDependency
 
             if (!index.TryGet(sceneGUID, out SceneDependency deps) || deps == null || deps.scenes.Length == 0)
             {
+                if (inFlightLoads.TryGetValue(sceneGUID, out var existing))
+                {
+                    await existing;
+                    return loadedSceneHandles[sceneGUID];
+                }
+
                 var directHandle = Addressables.LoadSceneAsync(sceneGUID, mode);
                 loadedSceneHandles[sceneGUID] = directHandle;
-                await AsyncOpToTask(directHandle);
+                var loadTask = AsyncOpToTask(directHandle);
+                inFlightLoads[sceneGUID] = loadTask;
+                try
+                {
+                    await loadTask;
+                }
+                finally
+                {
+                    inFlightLoads.Remove(sceneGUID);
+                }
                 return directHandle;
             }
 
