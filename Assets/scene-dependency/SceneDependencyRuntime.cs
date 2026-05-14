@@ -13,11 +13,14 @@ namespace BAStudio.SceneDependency
     {
         static Dictionary<string, AsyncOperationHandle<SceneInstance>> loadedSceneHandles =
             new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
+        static Dictionary<string, Task> inFlightLoads =
+            new Dictionary<string, Task>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStaticState()
         {
             loadedSceneHandles = new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
+            inFlightLoads = new Dictionary<string, Task>();
         }
 
         public static async Task<AsyncOperationHandle<SceneInstance>> LoadSceneAsync(
@@ -89,13 +92,24 @@ namespace BAStudio.SceneDependency
                     if (loadedSceneHandles.TryGetValue(guid, out var existing) && existing.IsValid())
                         continue;
 
+                    if (inFlightLoads.TryGetValue(guid, out var inFlight))
+                    {
+                        depLoadTasks.Add(inFlight);
+                        continue;
+                    }
+
                     var depHandle = Addressables.LoadSceneAsync(guid, LoadSceneMode.Additive);
                     loadedSceneHandles[guid] = depHandle;
                     handlesAllocatedThisCall.Add(guid);
-                    depLoadTasks.Add(AsyncOpToTask(depHandle));
+                    var loadTask = AsyncOpToTask(depHandle);
+                    inFlightLoads[guid] = loadTask;
+                    depLoadTasks.Add(loadTask);
                 }
                 if (depLoadTasks.Count > 0)
                     await Task.WhenAll(depLoadTasks);
+
+                foreach (var guid in handlesAllocatedThisCall)
+                    inFlightLoads.Remove(guid);
 
                 // Phase 3: Load master scene
                 var masterHandle = Addressables.LoadSceneAsync(sceneGUID, LoadSceneMode.Additive);
@@ -109,6 +123,7 @@ namespace BAStudio.SceneDependency
                 foreach (var guid in depGUIDs)
                 {
                     if (!loadedSceneHandles.TryGetValue(guid, out var dh) || !dh.IsValid()) continue;
+                    if (dh.Status != AsyncOperationStatus.Succeeded) continue;
                     var depScene = dh.Result.Scene;
                     if (!depScene.IsValid() || !depScene.isLoaded) continue;
                     goCache.Clear();
@@ -126,14 +141,24 @@ namespace BAStudio.SceneDependency
             }
             catch
             {
+                var cleanupTasks = new List<Task>();
                 foreach (var guid in handlesAllocatedThisCall)
                 {
-                    if (loadedSceneHandles.TryGetValue(guid, out var h) && h.IsValid())
+                    inFlightLoads.Remove(guid);
+                    if (loadedSceneHandles.TryGetValue(guid, out var h))
                     {
-                        try { Addressables.UnloadSceneAsync(h); }
-                        catch (Exception e) { Debug.LogException(e); }
+                        loadedSceneHandles.Remove(guid);
+                        if (h.IsValid())
+                        {
+                            try { cleanupTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(h))); }
+                            catch (Exception e) { Debug.LogException(e); }
+                        }
                     }
-                    loadedSceneHandles.Remove(guid);
+                }
+                if (cleanupTasks.Count > 0)
+                {
+                    try { await Task.WhenAll(cleanupTasks); }
+                    catch (Exception e) { Debug.LogException(e); }
                 }
                 throw;
             }
@@ -141,10 +166,11 @@ namespace BAStudio.SceneDependency
 
         public static async Task UnloadSceneAsync(string sceneGUID)
         {
-            if (loadedSceneHandles.TryGetValue(sceneGUID, out var handle) && handle.IsValid())
+            if (loadedSceneHandles.TryGetValue(sceneGUID, out var handle))
             {
-                await AsyncOpToTask(Addressables.UnloadSceneAsync(handle));
                 loadedSceneHandles.Remove(sceneGUID);
+                if (handle.IsValid())
+                    await AsyncOpToTask(Addressables.UnloadSceneAsync(handle));
             }
         }
 

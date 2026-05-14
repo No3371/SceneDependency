@@ -92,7 +92,6 @@ namespace BAStudio.SceneDependency
 
         static SceneDependencyIndex runtimeInstance;
         static Task<SceneDependencyIndex> initTask;
-        static readonly object initLock = new object();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
@@ -119,32 +118,28 @@ namespace BAStudio.SceneDependency
             return Task.FromResult(SceneDependencyIndexEditorAccess.Instance);
 #else
             if (runtimeInstance != null) return Task.FromResult(runtimeInstance);
+            if (initTask != null && !initTask.IsFaulted) return initTask;
 
-            lock (initLock)
+            var tcs = new TaskCompletionSource<SceneDependencyIndex>();
+            initTask = tcs.Task;
+
+            var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel);
+            aoh.Completed += h =>
             {
-                if (initTask != null && !initTask.IsFaulted) return initTask;
-
-                var tcs = new TaskCompletionSource<SceneDependencyIndex>();
-                initTask = tcs.Task;
-
-                var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel);
-                aoh.Completed += h =>
+                if (h.Status == AsyncOperationStatus.Succeeded)
                 {
-                    if (h.Status == AsyncOperationStatus.Succeeded)
-                    {
-                        runtimeInstance = h.Result;
-                        tcs.SetResult(h.Result);
-                    }
-                    else
-                    {
-                        Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
-                        tcs.SetException(h.OperationException ??
-                            new Exception("[SceneDependency] Failed to load index."));
-                    }
-                };
+                    runtimeInstance = h.Result;
+                    tcs.SetResult(h.Result);
+                }
+                else
+                {
+                    Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
+                    tcs.SetException(h.OperationException ??
+                        new Exception("[SceneDependency] Failed to load index."));
+                }
+            };
 
-                return tcs.Task;
-            }
+            return tcs.Task;
 #endif
         }
     }
