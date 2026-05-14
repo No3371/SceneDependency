@@ -86,7 +86,7 @@ namespace BAStudio.SceneDependency
                 var depLoadTasks = new List<Task>();
                 foreach (var guid in depGUIDs)
                 {
-                    if (loadedSceneHandles.ContainsKey(guid) && loadedSceneHandles[guid].IsValid())
+                    if (loadedSceneHandles.TryGetValue(guid, out var existing) && existing.IsValid())
                         continue;
 
                     var depHandle = Addressables.LoadSceneAsync(guid, LoadSceneMode.Additive);
@@ -246,7 +246,9 @@ namespace BAStudio.SceneDependency
         {
             foreach (var kvp in loadedSceneHandles)
             {
-                if (kvp.Value.IsValid() && kvp.Value.IsDone && kvp.Value.Result.Scene == scene)
+                if (kvp.Value.IsValid() && kvp.Value.IsDone
+                    && kvp.Value.Status == AsyncOperationStatus.Succeeded
+                    && kvp.Value.Result.Scene == scene)
                     return kvp.Key;
             }
             return null;

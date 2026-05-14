@@ -1,4 +1,3 @@
-using System.Linq;
 using UnityEditor;
 using UnityEditor.AddressableAssets;
 using UnityEditor.SceneManagement;
@@ -6,7 +5,6 @@ using UnityEngine;
 
 namespace BAStudio.SceneDependency
 {
-    [InitializeOnLoad]
     public static class SceneDependencyEditorHooks
     {
         [InitializeOnLoadMethod]
@@ -21,8 +19,12 @@ namespace BAStudio.SceneDependency
         {
             if (EditorApplication.isPlaying) return;
 
-            var roots = scene.GetRootGameObjects();
-            var proxy = roots.FirstOrDefault(r => r.GetComponent<SceneDependencyProxy>())?.GetComponent<SceneDependencyProxy>();
+            SceneDependencyProxy proxy = null;
+            foreach (var go in scene.GetRootGameObjects())
+            {
+                proxy = go.GetComponent<SceneDependencyProxy>();
+                if (proxy != null) break;
+            }
             if (proxy == null || proxy.config == null) return;
             if (proxy.config.scenes == null || proxy.config.scenes.Length == 0)
             {
@@ -52,9 +54,9 @@ namespace BAStudio.SceneDependency
             ValidateDepsAddressable(proxy.config, addrDefaultSettings);
             EnsureIndexAddressable(addrDefaultSettings, sdGroup);
 
-            if (SceneDependencyIndexEditorAccess.Instance.ContainsKey(sceneGUID))
+            if (SceneDependencyIndexEditorAccess.Instance.TryGet(sceneGUID, out var existing))
             {
-                if (SceneDependencyIndexEditorAccess.Instance.Index[sceneGUID] != proxy.config)
+                if (existing != proxy.config)
                 {
                     Debug.LogError("[SceneDependency] Saving scene but config object mismatch!");
                     return;
@@ -107,11 +109,6 @@ namespace BAStudio.SceneDependency
                         depPath, depRef.AssetGUID));
                 }
             }
-        }
-
-        public static string GetGUIDFromAsset(Object target)
-        {
-            return AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(target));
         }
     }
 }

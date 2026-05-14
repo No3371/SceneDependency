@@ -54,6 +54,9 @@ namespace BAStudio.SceneDependency
         void PopulateIndex ()
         {
             if (sceneDependencies == null || cachedGUIDs == null) return;
+            if (sceneDependencies.Count != cachedGUIDs.Count)
+                Debug.LogWarningFormat("[SceneDependency] Index data mismatch: {0} configs vs {1} GUIDs. Asset may be corrupt.",
+                    sceneDependencies.Count, cachedGUIDs.Count);
             int count = Mathf.Min(sceneDependencies.Count, cachedGUIDs.Count);
             for (int i = 0; i < count; i++)
             {
@@ -68,8 +71,7 @@ namespace BAStudio.SceneDependency
 
         public void OnAfterDeserialize()
         {
-            if (index == null) index = new Dictionary<string, SceneDependency>();
-            index.Clear();
+            index = new Dictionary<string, SceneDependency>();
             PopulateIndex();
         }
 
@@ -120,7 +122,7 @@ namespace BAStudio.SceneDependency
 
             lock (initLock)
             {
-                if (initTask != null) return initTask;
+                if (initTask != null && !initTask.IsFaulted) return initTask;
 
                 var tcs = new TaskCompletionSource<SceneDependencyIndex>();
                 initTask = tcs.Task;
@@ -136,7 +138,6 @@ namespace BAStudio.SceneDependency
                     else
                     {
                         Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
-                        initTask = null;
                         tcs.SetException(h.OperationException ??
                             new Exception("[SceneDependency] Failed to load index."));
                     }

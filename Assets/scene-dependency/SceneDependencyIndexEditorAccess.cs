@@ -14,7 +14,6 @@ namespace BAStudio.SceneDependency
                 _ = Instance;
                 return indexAssetGUID;
             }
-            private set => indexAssetGUID = value;
         }
 
         public static SceneDependencyIndex instance;
@@ -38,7 +37,7 @@ namespace BAStudio.SceneDependency
                         instance = ScriptableObject.CreateInstance<SceneDependencyIndex>();
                         AssetDatabase.CreateAsset(instance, "Assets/SceneDependencyIndex.asset");
                         AssetDatabase.SaveAssets();
-                        IndexAssetGUID = AssetDatabase.GUIDFromAssetPath("Assets/SceneDependencyIndex.asset").ToString();
+                        indexAssetGUID = AssetDatabase.GUIDFromAssetPath("Assets/SceneDependencyIndex.asset").ToString();
                     }
                     else if (lookup.Length > 1)
                     {
@@ -47,7 +46,7 @@ namespace BAStudio.SceneDependency
                     else
                     {
                         instance = (SceneDependencyIndex)AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(lookup[0]));
-                        IndexAssetGUID = lookup[0];
+                        indexAssetGUID = lookup[0];
                     }
                 }
                 return instance;
