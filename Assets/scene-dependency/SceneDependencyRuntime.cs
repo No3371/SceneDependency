@@ -61,45 +61,54 @@ namespace BAStudio.SceneDependency
 
             var depGUIDs = ResolveDependencyTree(deps, index);
 
-            // Phase 1: Unload (Single mode)
-            if (mode == LoadSceneMode.Single)
+            if (inFlightLoads.TryGetValue(sceneGUID, out var existingMasterLoad))
             {
-                var unloadTasks = new List<Task>();
-                for (int i = SceneManager.sceneCount - 1; i >= 0; i--)
-                {
-                    var scene = SceneManager.GetSceneAt(i);
-                    if (!scene.IsValid() || !scene.isLoaded) continue;
-                    if (scene.name == "DontDestroyOnLoad") continue;
-
-                    string loadedGUID = FindGUIDForLoadedScene(scene);
-                    if (loadedGUID == sceneGUID) continue;
-
-                    bool isDep = loadedGUID != null && depGUIDs.Contains(loadedGUID);
-                    if (isDep && !reloadLoadedDep) continue;
-
-                    if (loadedGUID != null && index.TryGet(loadedGUID, out var loadedConfig)
-                        && loadedConfig != null && loadedConfig.NoAutoUnloadInSingleLoadMode) continue;
-
-                    if (loadedGUID != null && loadedSceneHandles.TryGetValue(loadedGUID, out var existingHandle))
-                    {
-                        if (existingHandle.IsValid())
-                            unloadTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(existingHandle)));
-                        loadedSceneHandles.Remove(loadedGUID);
-                    }
-                    else
-                    {
-                        var op = SceneManager.UnloadSceneAsync(scene);
-                        if (op != null)
-                            unloadTasks.Add(AsyncOpToTask(op));
-                    }
-                }
-                if (unloadTasks.Count > 0)
-                    await Task.WhenAll(unloadTasks);
+                await existingMasterLoad;
+                return loadedSceneHandles[sceneGUID];
             }
+
+            var overallCompletion = new TaskCompletionSource<bool>();
+            inFlightLoads[sceneGUID] = overallCompletion.Task;
 
             var handlesAllocatedThisCall = new List<string>();
             try
             {
+                // Phase 1: Unload (Single mode)
+                if (mode == LoadSceneMode.Single)
+                {
+                    var unloadTasks = new List<Task>();
+                    for (int i = SceneManager.sceneCount - 1; i >= 0; i--)
+                    {
+                        var scene = SceneManager.GetSceneAt(i);
+                        if (!scene.IsValid() || !scene.isLoaded) continue;
+                        if (scene.name == "DontDestroyOnLoad") continue;
+
+                        string loadedGUID = FindGUIDForLoadedScene(scene);
+                        if (loadedGUID == sceneGUID) continue;
+
+                        bool isDep = loadedGUID != null && depGUIDs.Contains(loadedGUID);
+                        if (isDep && !reloadLoadedDep) continue;
+
+                        if (loadedGUID != null && index.TryGet(loadedGUID, out var loadedConfig)
+                            && loadedConfig != null && loadedConfig.NoAutoUnloadInSingleLoadMode) continue;
+
+                        if (loadedGUID != null && loadedSceneHandles.TryGetValue(loadedGUID, out var existingHandle))
+                        {
+                            if (existingHandle.IsValid())
+                                unloadTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(existingHandle)));
+                            loadedSceneHandles.Remove(loadedGUID);
+                        }
+                        else
+                        {
+                            var op = SceneManager.UnloadSceneAsync(scene);
+                            if (op != null)
+                                unloadTasks.Add(AsyncOpToTask(op));
+                        }
+                    }
+                    if (unloadTasks.Count > 0)
+                        await Task.WhenAll(unloadTasks);
+                }
+
                 // Phase 2: Load dependencies in parallel
                 var depLoadTasks = new List<Task>();
                 foreach (var guid in depGUIDs)
@@ -149,9 +158,10 @@ namespace BAStudio.SceneDependency
                 if (masterScene.IsValid())
                     SceneManager.SetActiveScene(masterScene);
 
+                overallCompletion.SetResult(true);
                 return masterHandle;
             }
-            catch
+            catch (Exception ex)
             {
                 var cleanupTasks = new List<Task>();
                 foreach (var guid in handlesAllocatedThisCall)
@@ -172,7 +182,12 @@ namespace BAStudio.SceneDependency
                     try { await Task.WhenAll(cleanupTasks); }
                     catch (Exception e) { Debug.LogException(e); }
                 }
+                overallCompletion.TrySetException(ex);
                 throw;
+            }
+            finally
+            {
+                inFlightLoads.Remove(sceneGUID);
             }
         }
 
