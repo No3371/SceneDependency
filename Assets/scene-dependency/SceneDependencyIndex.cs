@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
-using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.Serialization;
 
 namespace BAStudio.SceneDependency
@@ -21,33 +20,32 @@ namespace BAStudio.SceneDependency
         [NonSerialized]
         private Dictionary<string, SceneDependency> index;
 
-        public Dictionary<string, SceneDependency> Index
+        Dictionary<string, SceneDependency> EnsureIndex()
         {
-            get
+            if (index == null)
             {
-                if (index == null)
-                {
-                    index = new Dictionary<string, SceneDependency>();
-                    PopulateIndex();
-                }
-                return index;
+                index = new Dictionary<string, SceneDependency>();
+                PopulateIndex();
             }
+            return index;
         }
+
+        public int Count => EnsureIndex().Count;
 
         public bool TryGet(string guid, out SceneDependency deps)
         {
-            return Index.TryGetValue(guid, out deps);
+            return EnsureIndex().TryGetValue(guid, out deps);
         }
 
         public bool ContainsKey(string guid)
         {
-            return Index.ContainsKey(guid);
+            return EnsureIndex().ContainsKey(guid);
         }
 
 #if UNITY_EDITOR
         public void Add (string guid, SceneDependency deps)
         {
-            Index.Add(guid, deps);
+            EnsureIndex().Add(guid, deps);
         }
 #endif
 
@@ -112,34 +110,18 @@ namespace BAStudio.SceneDependency
             }
         }
 
-        public static Task<SceneDependencyIndex> EnsureInitializedAsync()
+        public static async Task<SceneDependencyIndex> EnsureInitializedAsync()
         {
 #if UNITY_EDITOR
-            return Task.FromResult(SceneDependencyIndexEditorAccess.Instance);
+            return SceneDependencyIndexEditorAccess.Instance;
 #else
-            if (runtimeInstance != null) return Task.FromResult(runtimeInstance);
-            if (initTask != null && !initTask.IsFaulted) return initTask;
+            if (runtimeInstance != null) return runtimeInstance;
+            if (initTask != null && !initTask.IsFaulted) return await initTask;
 
-            var tcs = new TaskCompletionSource<SceneDependencyIndex>();
-            initTask = tcs.Task;
-
-            var aoh = Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel);
-            aoh.Completed += h =>
-            {
-                if (h.Status == AsyncOperationStatus.Succeeded)
-                {
-                    runtimeInstance = h.Result;
-                    tcs.SetResult(h.Result);
-                }
-                else
-                {
-                    Debug.LogError("[SceneDependency] Failed to load index via Addressables label: " + AddressableLabel);
-                    tcs.SetException(h.OperationException ??
-                        new Exception("[SceneDependency] Failed to load index."));
-                }
-            };
-
-            return tcs.Task;
+            initTask = SceneDependencyRuntime.AsyncOpToTask(
+                Addressables.LoadAssetAsync<SceneDependencyIndex>(AddressableLabel));
+            runtimeInstance = await initTask;
+            return runtimeInstance;
 #endif
         }
     }

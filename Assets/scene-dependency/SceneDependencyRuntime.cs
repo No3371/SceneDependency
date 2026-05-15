@@ -144,10 +144,7 @@ namespace BAStudio.SceneDependency
                     goCache.Clear();
                     depScene.GetRootGameObjects(goCache);
                     foreach (var go in goCache)
-                    {
-                        if (go == null) continue;
                         go.GetComponent<SceneDependencyProxy>()?.LoadedAsDep(masterScene.name, sceneGUID);
-                    }
                 }
                 if (masterScene.IsValid())
                     SceneManager.SetActiveScene(masterScene);
@@ -233,7 +230,7 @@ namespace BAStudio.SceneDependency
 
         // --- Async helpers (compatible with all Addressables versions) ---
 
-        static Task<T> AsyncOpToTask<T>(AsyncOperationHandle<T> handle)
+        internal static Task<T> AsyncOpToTask<T>(AsyncOperationHandle<T> handle)
         {
             if (handle.IsDone)
             {

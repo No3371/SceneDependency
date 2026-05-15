@@ -18,7 +18,7 @@ namespace BAStudio.SceneDependency
                 return;
             }
 
-            if (index.Index.Count == 0)
+            if (index.Count == 0)
             {
                 Debug.LogWarning("[SceneDependency] Index is empty at build time. Save scenes with SceneDependencyProxy to populate it.");
             }
