@@ -178,6 +178,12 @@ namespace BAStudio.SceneDependency
 
         public static async Task UnloadSceneAsync(string sceneGUID)
         {
+            if (inFlightLoads.TryGetValue(sceneGUID, out var inFlight))
+            {
+                try { await inFlight; }
+                catch { }
+            }
+
             if (loadedSceneHandles.TryGetValue(sceneGUID, out var handle))
             {
                 loadedSceneHandles.Remove(sceneGUID);
