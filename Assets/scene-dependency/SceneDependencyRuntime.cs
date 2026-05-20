@@ -52,6 +52,11 @@ namespace BAStudio.SceneDependency
                 {
                     await loadTask;
                 }
+                catch
+                {
+                    loadedSceneHandles.Remove(sceneGUID);
+                    throw;
+                }
                 finally
                 {
                     inFlightLoads.Remove(sceneGUID);
@@ -198,6 +203,10 @@ namespace BAStudio.SceneDependency
                 }
 
                 // Phase 3: Load master scene
+                // If the master scene was already loaded (re-load case), unload the old copy first.
+                if (loadedSceneHandles.TryGetValue(sceneGUID, out var prevMasterHandle) && prevMasterHandle.IsValid())
+                    await AsyncOpToTask(Addressables.UnloadSceneAsync(prevMasterHandle));
+
                 var masterHandle = Addressables.LoadSceneAsync(sceneGUID, LoadSceneMode.Additive);
                 loadedSceneHandles[sceneGUID] = masterHandle;
                 handlesAllocatedThisCall.Add(sceneGUID);
@@ -238,6 +247,16 @@ namespace BAStudio.SceneDependency
                             catch (Exception e) { Debug.LogException(e); }
                         }
                     }
+                }
+                if (deferredAddressableUnload.HasValue)
+                {
+                    var (dGuid, dHandle) = deferredAddressableUnload.Value;
+                    if (dHandle.IsValid())
+                    {
+                        try { cleanupTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(dHandle))); }
+                        catch (Exception e) { Debug.LogException(e); }
+                    }
+                    loadedSceneHandles.Remove(dGuid);
                 }
                 if (cleanupTasks.Count > 0)
                 {
