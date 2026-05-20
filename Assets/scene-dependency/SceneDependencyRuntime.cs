@@ -71,17 +71,26 @@ namespace BAStudio.SceneDependency
             inFlightLoads[sceneGUID] = overallCompletion.Task;
 
             var handlesAllocatedThisCall = new List<string>();
+            Scene? deferredSceneUnload = null;
+            (string guid, AsyncOperationHandle<SceneInstance> handle)? deferredAddressableUnload = null;
             try
             {
                 // Phase 1: Unload (Single mode)
+                // Collect targets first — if unloading all would leave zero loaded
+                // scenes (which Unity forbids), defer one until after Phase 2.
                 if (mode == LoadSceneMode.Single)
                 {
-                    var unloadTasks = new List<Task>();
+                    var addressableUnloads = new List<(string guid, AsyncOperationHandle<SceneInstance> handle)>();
+                    var sceneManagerUnloads = new List<Scene>();
+                    int totalLoadedScenes = 0;
+
                     for (int i = SceneManager.sceneCount - 1; i >= 0; i--)
                     {
                         var scene = SceneManager.GetSceneAt(i);
                         if (!scene.IsValid() || !scene.isLoaded) continue;
                         if (scene.name == "DontDestroyOnLoad") continue;
+
+                        totalLoadedScenes++;
 
                         string loadedGUID = FindGUIDForLoadedScene(scene);
                         if (loadedGUID == sceneGUID) continue;
@@ -94,16 +103,41 @@ namespace BAStudio.SceneDependency
 
                         if (loadedGUID != null && loadedSceneHandles.TryGetValue(loadedGUID, out var existingHandle))
                         {
-                            if (existingHandle.IsValid())
-                                unloadTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(existingHandle)));
-                            loadedSceneHandles.Remove(loadedGUID);
+                            addressableUnloads.Add((loadedGUID, existingHandle));
                         }
                         else
                         {
-                            var op = SceneManager.UnloadSceneAsync(scene);
-                            if (op != null)
-                                unloadTasks.Add(AsyncOpToTask(op));
+                            sceneManagerUnloads.Add(scene);
                         }
+                    }
+
+                    int survivingCount = totalLoadedScenes - addressableUnloads.Count - sceneManagerUnloads.Count;
+                    if (survivingCount <= 0 && (addressableUnloads.Count + sceneManagerUnloads.Count) > 0)
+                    {
+                        if (sceneManagerUnloads.Count > 0)
+                        {
+                            deferredSceneUnload = sceneManagerUnloads[sceneManagerUnloads.Count - 1];
+                            sceneManagerUnloads.RemoveAt(sceneManagerUnloads.Count - 1);
+                        }
+                        else
+                        {
+                            deferredAddressableUnload = addressableUnloads[addressableUnloads.Count - 1];
+                            addressableUnloads.RemoveAt(addressableUnloads.Count - 1);
+                        }
+                    }
+
+                    var unloadTasks = new List<Task>();
+                    foreach (var (guid, handle) in addressableUnloads)
+                    {
+                        if (handle.IsValid())
+                            unloadTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(handle)));
+                        loadedSceneHandles.Remove(guid);
+                    }
+                    foreach (var scene in sceneManagerUnloads)
+                    {
+                        var op = SceneManager.UnloadSceneAsync(scene);
+                        if (op != null)
+                            unloadTasks.Add(AsyncOpToTask(op));
                     }
                     if (unloadTasks.Count > 0)
                         await Task.WhenAll(unloadTasks);
@@ -134,6 +168,34 @@ namespace BAStudio.SceneDependency
 
                 foreach (var guid in handlesAllocatedThisCall)
                     inFlightLoads.Remove(guid);
+
+                // Deferred unload: now that new scenes are loaded, unload the scene
+                // we kept alive to satisfy Unity's "cannot unload last scene" rule.
+                if (deferredSceneUnload.HasValue || deferredAddressableUnload.HasValue)
+                {
+                    var deferredTasks = new List<Task>();
+                    if (deferredSceneUnload.HasValue)
+                    {
+                        var ds = deferredSceneUnload.Value;
+                        if (ds.IsValid() && ds.isLoaded)
+                        {
+                            var op = SceneManager.UnloadSceneAsync(ds);
+                            if (op != null)
+                                deferredTasks.Add(AsyncOpToTask(op));
+                        }
+                        deferredSceneUnload = null;
+                    }
+                    if (deferredAddressableUnload.HasValue)
+                    {
+                        var (guid, handle) = deferredAddressableUnload.Value;
+                        if (handle.IsValid())
+                            deferredTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(handle)));
+                        loadedSceneHandles.Remove(guid);
+                        deferredAddressableUnload = null;
+                    }
+                    if (deferredTasks.Count > 0)
+                        await Task.WhenAll(deferredTasks);
+                }
 
                 // Phase 3: Load master scene
                 var masterHandle = Addressables.LoadSceneAsync(sceneGUID, LoadSceneMode.Additive);
