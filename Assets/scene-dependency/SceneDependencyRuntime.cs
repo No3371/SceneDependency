@@ -29,6 +29,7 @@ namespace BAStudio.SceneDependency
 #endif
 #if UNITY_EDITOR
         static Dictionary<string, SceneDependency> editorLookup;
+        static HashSet<string> editorNegativeCache = new HashSet<string>();
 #endif
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -47,6 +48,7 @@ namespace BAStudio.SceneDependency
 #endif
 #if UNITY_EDITOR
             editorLookup = null;
+            editorNegativeCache = new HashSet<string>();
 #endif
             configCache = new Dictionary<string, SceneDependency>();
         }
@@ -59,6 +61,9 @@ namespace BAStudio.SceneDependency
                 return cached;
 
 #if UNITY_EDITOR
+            if (editorNegativeCache.Contains(sceneGUID))
+                return null;
+
             if (editorLookup == null)
                 BuildEditorLookup();
 
@@ -68,13 +73,14 @@ namespace BAStudio.SceneDependency
                 return config;
             }
 
-            // Rebuild in case a config SO was added since the last scan
             BuildEditorLookup();
             if (editorLookup.TryGetValue(sceneGUID, out config))
             {
                 configCache[sceneGUID] = config;
+                editorNegativeCache.Remove(sceneGUID);
                 return config;
             }
+            editorNegativeCache.Add(sceneGUID);
             return null;
 #else
             if (inFlightConfigLoads.TryGetValue(sceneGUID, out var inFlight))
@@ -162,7 +168,10 @@ namespace BAStudio.SceneDependency
                 if (inFlightLoads.TryGetValue(sceneGUID, out var existing))
                 {
                     await existing;
-                    return loadedSceneHandles[sceneGUID];
+                    if (loadedSceneHandles.TryGetValue(sceneGUID, out var joined))
+                        return joined;
+                    throw new InvalidOperationException(
+                        "[SceneDependency] Scene was unloaded before the awaiting caller could return: " + sceneGUID);
                 }
 
                 var directHandle = Addressables.LoadSceneAsync(sceneGUID, mode);
@@ -190,7 +199,10 @@ namespace BAStudio.SceneDependency
             if (inFlightLoads.TryGetValue(sceneGUID, out var existingMasterLoad))
             {
                 await existingMasterLoad;
-                return loadedSceneHandles[sceneGUID];
+                if (loadedSceneHandles.TryGetValue(sceneGUID, out var joined))
+                    return joined;
+                throw new InvalidOperationException(
+                    "[SceneDependency] Scene was unloaded before the awaiting caller could return: " + sceneGUID);
             }
 
             var overallCompletion = new TaskCompletionSource<bool>();
@@ -255,7 +267,6 @@ namespace BAStudio.SceneDependency
                     {
                         if (handle.IsValid())
                             unloadTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(handle)));
-                        loadedSceneHandles.Remove(guid);
                     }
                     foreach (var scene in sceneManagerUnloads)
                     {
@@ -265,13 +276,17 @@ namespace BAStudio.SceneDependency
                     }
                     if (unloadTasks.Count > 0)
                         await Task.WhenAll(unloadTasks);
+                    foreach (var (guid, handle) in addressableUnloads)
+                        loadedSceneHandles.Remove(guid);
                 }
 
                 // Phase 2: Load dependencies in parallel
                 var depLoadTasks = new List<Task>();
                 foreach (var guid in depGUIDs)
                 {
-                    if (loadedSceneHandles.TryGetValue(guid, out var existing) && existing.IsValid())
+                    if (loadedSceneHandles.TryGetValue(guid, out var existing)
+                        && existing.IsValid() && existing.IsDone
+                        && existing.Status == AsyncOperationStatus.Succeeded)
                         continue;
 
                     if (inFlightLoads.TryGetValue(guid, out var inFlight))
