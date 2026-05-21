@@ -14,6 +14,8 @@ namespace BAStudio.SceneDependency
 {
     public static class SceneDependencyRuntime
     {
+        internal const string ConfigAddressPrefix = "sd:";
+
         static Dictionary<string, AsyncOperationHandle<SceneInstance>> loadedSceneHandles =
             new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
         static Dictionary<string, Task> inFlightLoads =
@@ -132,18 +134,16 @@ namespace BAStudio.SceneDependency
         {
             try
             {
-                var handle = Addressables.LoadAssetAsync<SceneDependency>(sceneGUID);
+                var handle = Addressables.LoadAssetAsync<SceneDependency>(ConfigAddressPrefix + sceneGUID);
                 var result = await AsyncOpToTask(handle);
                 configCache[sceneGUID] = result;
                 configHandles[sceneGUID] = handle;
                 return result;
             }
-            catch (InvalidKeyException)
-            {
-                return null;
-            }
             catch (Exception ex)
             {
+                if (ex is InvalidKeyException || ex.InnerException is InvalidKeyException)
+                    return null;
                 Debug.LogWarning($"[SceneDependency] Failed to load config for GUID {sceneGUID}: {ex.Message}");
                 return null;
             }

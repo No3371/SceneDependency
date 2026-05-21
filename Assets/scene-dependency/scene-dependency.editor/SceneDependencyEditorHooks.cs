@@ -66,10 +66,11 @@ namespace BAStudio.SceneDependency
             if (entry == null)
                 entry = settings.CreateOrMoveEntry(configAssetGUID, group);
 
-            if (entry.address != sceneGUID)
+            var expectedAddress = SceneDependencyRuntime.ConfigAddressPrefix + sceneGUID;
+            if (entry.address != expectedAddress)
             {
-                entry.address = sceneGUID;
-                Debug.Log("[SceneDependency] Set config Addressable address to: " + sceneGUID);
+                entry.address = expectedAddress;
+                Debug.Log("[SceneDependency] Set config Addressable address to: " + expectedAddress);
             }
         }
 
