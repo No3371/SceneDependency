@@ -7,6 +7,8 @@ namespace BAStudio.SceneDependency
 {
     public static class SceneDependencyEditorHooks
     {
+        const string AddressableGroupName = "_SceneDependency";
+
         [InitializeOnLoadMethod]
         public static void Hook ()
         {
@@ -29,9 +31,9 @@ namespace BAStudio.SceneDependency
 
             var sceneGUID = AssetDatabase.GUIDFromAssetPath(path).ToString();
             var addrSettings = AddressableAssetSettingsDefaultObject.GetSettings(true);
-            var sdGroup = addrSettings.FindGroup(g => g.Name == "_SceneDependency");
+            var sdGroup = addrSettings.FindGroup(g => g.Name == AddressableGroupName);
             if (sdGroup == null)
-                sdGroup = addrSettings.CreateGroup("_SceneDependency", false, true, true, addrSettings.DefaultGroup.Schemas);
+                sdGroup = addrSettings.CreateGroup(AddressableGroupName, false, true, true, addrSettings.DefaultGroup.Schemas);
 
             if (proxy.config.subject == null || proxy.config.subject.editorAsset == null)
             {

@@ -24,6 +24,8 @@ namespace BAStudio.SceneDependency
 #if !UNITY_EDITOR
         static Dictionary<string, AsyncOperationHandle<SceneDependency>> configHandles =
             new Dictionary<string, AsyncOperationHandle<SceneDependency>>();
+        static Dictionary<string, Task<SceneDependency>> inFlightConfigLoads =
+            new Dictionary<string, Task<SceneDependency>>();
 #endif
 #if UNITY_EDITOR
         static Dictionary<string, SceneDependency> editorLookup;
@@ -41,6 +43,7 @@ namespace BAStudio.SceneDependency
                     Addressables.Release(kvp.Value);
             }
             configHandles = new Dictionary<string, AsyncOperationHandle<SceneDependency>>();
+            inFlightConfigLoads = new Dictionary<string, Task<SceneDependency>>();
 #endif
 #if UNITY_EDITOR
             editorLookup = null;
@@ -64,24 +67,28 @@ namespace BAStudio.SceneDependency
                 configCache[sceneGUID] = config;
                 return config;
             }
+
+            // Rebuild in case a config SO was added since the last scan
+            BuildEditorLookup();
+            if (editorLookup.TryGetValue(sceneGUID, out config))
+            {
+                configCache[sceneGUID] = config;
+                return config;
+            }
             return null;
 #else
+            if (inFlightConfigLoads.TryGetValue(sceneGUID, out var inFlight))
+                return await inFlight;
+
+            var task = LoadConfigFromAddressables(sceneGUID);
+            inFlightConfigLoads[sceneGUID] = task;
             try
             {
-                var handle = Addressables.LoadAssetAsync<SceneDependency>(sceneGUID);
-                var result = await AsyncOpToTask(handle);
-                configCache[sceneGUID] = result;
-                configHandles[sceneGUID] = handle;
-                return result;
+                return await task;
             }
-            catch (InvalidKeyException)
+            finally
             {
-                return null;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[SceneDependency] Failed to load config for GUID {sceneGUID}: {ex.Message}");
-                return null;
+                inFlightConfigLoads.Remove(sceneGUID);
             }
 #endif
         }
@@ -110,6 +117,29 @@ namespace BAStudio.SceneDependency
                     continue;
                 }
                 editorLookup[subjectGUID] = config;
+            }
+        }
+#endif
+
+#if !UNITY_EDITOR
+        static async Task<SceneDependency> LoadConfigFromAddressables(string sceneGUID)
+        {
+            try
+            {
+                var handle = Addressables.LoadAssetAsync<SceneDependency>(sceneGUID);
+                var result = await AsyncOpToTask(handle);
+                configCache[sceneGUID] = result;
+                configHandles[sceneGUID] = handle;
+                return result;
+            }
+            catch (InvalidKeyException)
+            {
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[SceneDependency] Failed to load config for GUID {sceneGUID}: {ex.Message}");
+                return null;
             }
         }
 #endif
@@ -389,13 +419,7 @@ namespace BAStudio.SceneDependency
                 visited.Add(root.subject.AssetGUID);
             List<string> result = new List<string>();
             await ResolveRequiredAsync(root, visited, result);
-#if UNITY_EDITOR
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine("[SceneDependency] Loading dependencies in order:");
-            for (int i = 0; i < result.Count; i++)
-                sb.AppendLine(result[i]);
-            Debug.Log(sb.ToString());
-#endif
+            LogDependencyOrder(result);
             return result;
         }
 
@@ -423,13 +447,7 @@ namespace BAStudio.SceneDependency
                 visited.Add(root.subject.AssetGUID);
             List<string> result = new List<string>();
             ResolveRequired(root, configs, visited, result);
-#if UNITY_EDITOR
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine("[SceneDependency] Loading dependencies in order:");
-            for (int i = 0; i < result.Count; i++)
-                sb.AppendLine(result[i]);
-            Debug.Log(sb.ToString());
-#endif
+            LogDependencyOrder(result);
             return result;
         }
 
@@ -448,6 +466,16 @@ namespace BAStudio.SceneDependency
 
                 result.Add(guid);
             }
+        }
+
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
+        static void LogDependencyOrder(List<string> result)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[SceneDependency] Loading dependencies in order:");
+            for (int i = 0; i < result.Count; i++)
+                sb.AppendLine(result[i]);
+            Debug.Log(sb.ToString());
         }
 
         // --- Async helpers ---
