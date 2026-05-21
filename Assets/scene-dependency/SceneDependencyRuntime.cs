@@ -14,7 +14,7 @@ namespace BAStudio.SceneDependency
 {
     public static class SceneDependencyRuntime
     {
-        internal const string ConfigAddressPrefix = "sd:";
+        public const string ConfigAddressPrefix = "sd:";
 
         static Dictionary<string, AsyncOperationHandle<SceneInstance>> loadedSceneHandles =
             new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
@@ -57,34 +57,21 @@ namespace BAStudio.SceneDependency
 
         // --- Config loading (replaces central index) ---
 
-        internal static async Task<SceneDependency> TryLoadConfigAsync(string sceneGUID)
+        internal static Task<SceneDependency> TryLoadConfigAsync(string sceneGUID)
         {
             if (configCache.TryGetValue(sceneGUID, out var cached))
-                return cached;
+                return Task.FromResult(cached);
 
 #if UNITY_EDITOR
-            if (editorNegativeCache.Contains(sceneGUID))
-                return null;
-
-            if (editorLookup == null)
-                BuildEditorLookup();
-
-            if (editorLookup.TryGetValue(sceneGUID, out var config))
-            {
-                configCache[sceneGUID] = config;
-                return config;
-            }
-
-            BuildEditorLookup();
-            if (editorLookup.TryGetValue(sceneGUID, out config))
-            {
-                configCache[sceneGUID] = config;
-                editorNegativeCache.Remove(sceneGUID);
-                return config;
-            }
-            editorNegativeCache.Add(sceneGUID);
-            return null;
+            return Task.FromResult(TryLoadConfigEditor(sceneGUID));
 #else
+            return TryLoadConfigRuntime(sceneGUID);
+#endif
+        }
+
+#if !UNITY_EDITOR
+        static async Task<SceneDependency> TryLoadConfigRuntime(string sceneGUID)
+        {
             if (inFlightConfigLoads.TryGetValue(sceneGUID, out var inFlight))
                 return await inFlight;
 
@@ -98,8 +85,8 @@ namespace BAStudio.SceneDependency
             {
                 inFlightConfigLoads.Remove(sceneGUID);
             }
-#endif
         }
+#endif
 
         public static bool TryGetCachedConfig(string sceneGUID, out SceneDependency config)
         {
@@ -126,6 +113,31 @@ namespace BAStudio.SceneDependency
                 }
                 editorLookup[subjectGUID] = config;
             }
+        }
+
+        static SceneDependency TryLoadConfigEditor(string sceneGUID)
+        {
+            if (editorNegativeCache.Contains(sceneGUID))
+                return null;
+
+            if (editorLookup == null)
+                BuildEditorLookup();
+
+            if (editorLookup.TryGetValue(sceneGUID, out var config))
+            {
+                configCache[sceneGUID] = config;
+                return config;
+            }
+
+            BuildEditorLookup();
+            if (editorLookup.TryGetValue(sceneGUID, out config))
+            {
+                configCache[sceneGUID] = config;
+                editorNegativeCache.Remove(sceneGUID);
+                return config;
+            }
+            editorNegativeCache.Add(sceneGUID);
+            return null;
         }
 #endif
 
