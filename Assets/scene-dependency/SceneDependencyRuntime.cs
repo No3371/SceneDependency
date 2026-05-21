@@ -6,6 +6,9 @@ using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace BAStudio.SceneDependency
 {
@@ -16,12 +19,102 @@ namespace BAStudio.SceneDependency
         static Dictionary<string, Task> inFlightLoads =
             new Dictionary<string, Task>();
 
+        static Dictionary<string, SceneDependency> configCache =
+            new Dictionary<string, SceneDependency>();
+#if !UNITY_EDITOR
+        static Dictionary<string, AsyncOperationHandle<SceneDependency>> configHandles =
+            new Dictionary<string, AsyncOperationHandle<SceneDependency>>();
+#endif
+#if UNITY_EDITOR
+        static Dictionary<string, SceneDependency> editorLookup;
+#endif
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStaticState()
         {
             loadedSceneHandles = new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
             inFlightLoads = new Dictionary<string, Task>();
+#if !UNITY_EDITOR
+            foreach (var kvp in configHandles)
+            {
+                if (kvp.Value.IsValid())
+                    Addressables.Release(kvp.Value);
+            }
+            configHandles = new Dictionary<string, AsyncOperationHandle<SceneDependency>>();
+#endif
+#if UNITY_EDITOR
+            editorLookup = null;
+#endif
+            configCache = new Dictionary<string, SceneDependency>();
         }
+
+        // --- Config loading (replaces central index) ---
+
+        internal static async Task<SceneDependency> TryLoadConfigAsync(string sceneGUID)
+        {
+            if (configCache.TryGetValue(sceneGUID, out var cached))
+                return cached;
+
+#if UNITY_EDITOR
+            if (editorLookup == null)
+                BuildEditorLookup();
+
+            if (editorLookup.TryGetValue(sceneGUID, out var config))
+            {
+                configCache[sceneGUID] = config;
+                return config;
+            }
+            return null;
+#else
+            try
+            {
+                var handle = Addressables.LoadAssetAsync<SceneDependency>(sceneGUID);
+                var result = await AsyncOpToTask(handle);
+                configCache[sceneGUID] = result;
+                configHandles[sceneGUID] = handle;
+                return result;
+            }
+            catch (InvalidKeyException)
+            {
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[SceneDependency] Failed to load config for GUID {sceneGUID}: {ex.Message}");
+                return null;
+            }
+#endif
+        }
+
+        public static bool TryGetCachedConfig(string sceneGUID, out SceneDependency config)
+        {
+            return configCache.TryGetValue(sceneGUID, out config);
+        }
+
+#if UNITY_EDITOR
+        static void BuildEditorLookup()
+        {
+            editorLookup = new Dictionary<string, SceneDependency>();
+            var guids = AssetDatabase.FindAssets("t:SceneDependency");
+            foreach (var assetGUID in guids)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(assetGUID);
+                var config = AssetDatabase.LoadAssetAtPath<SceneDependency>(path);
+                if (config == null || config.subject == null || string.IsNullOrEmpty(config.subject.AssetGUID))
+                    continue;
+
+                var subjectGUID = config.subject.AssetGUID;
+                if (editorLookup.ContainsKey(subjectGUID))
+                {
+                    Debug.LogWarning($"[SceneDependency] Duplicate config for scene GUID {subjectGUID} at {path}");
+                    continue;
+                }
+                editorLookup[subjectGUID] = config;
+            }
+        }
+#endif
+
+        // --- Scene loading ---
 
         public static async Task<AsyncOperationHandle<SceneInstance>> LoadSceneAsync(
             AssetReference sceneRef, LoadSceneMode mode, bool reloadLoadedDep = false)
@@ -32,11 +125,9 @@ namespace BAStudio.SceneDependency
         public static async Task<AsyncOperationHandle<SceneInstance>> LoadSceneAsync(
             string sceneGUID, LoadSceneMode mode, bool reloadLoadedDep = false)
         {
-            var index = await SceneDependencyIndex.EnsureInitializedAsync();
-            if (index == null)
-                throw new InvalidOperationException("[SceneDependency] Index not loaded. Ensure SceneDependencyIndex is available.");
+            var deps = await TryLoadConfigAsync(sceneGUID);
 
-            if (!index.TryGet(sceneGUID, out SceneDependency deps) || deps == null || deps.scenes.Length == 0)
+            if (deps == null || deps.scenes == null || deps.scenes.Length == 0)
             {
                 if (inFlightLoads.TryGetValue(sceneGUID, out var existing))
                 {
@@ -64,7 +155,7 @@ namespace BAStudio.SceneDependency
                 return directHandle;
             }
 
-            var depGUIDs = ResolveDependencyTree(deps, index);
+            var depGUIDs = await ResolveDependencyTreeAsync(deps);
 
             if (inFlightLoads.TryGetValue(sceneGUID, out var existingMasterLoad))
             {
@@ -81,8 +172,6 @@ namespace BAStudio.SceneDependency
             try
             {
                 // Phase 1: Unload (Single mode)
-                // Collect targets first — if unloading all would leave zero loaded
-                // scenes (which Unity forbids), defer one until after Phase 2.
                 if (mode == LoadSceneMode.Single)
                 {
                     var addressableUnloads = new List<(string guid, AsyncOperationHandle<SceneInstance> handle)>();
@@ -103,7 +192,7 @@ namespace BAStudio.SceneDependency
                         bool isDep = loadedGUID != null && depGUIDs.Contains(loadedGUID);
                         if (isDep && !reloadLoadedDep) continue;
 
-                        if (loadedGUID != null && index.TryGet(loadedGUID, out var loadedConfig)
+                        if (loadedGUID != null && configCache.TryGetValue(loadedGUID, out var loadedConfig)
                             && loadedConfig != null && loadedConfig.NoAutoUnloadInSingleLoadMode) continue;
 
                         if (loadedGUID != null && loadedSceneHandles.TryGetValue(loadedGUID, out var existingHandle))
@@ -174,8 +263,7 @@ namespace BAStudio.SceneDependency
                 foreach (var guid in handlesAllocatedThisCall)
                     inFlightLoads.Remove(guid);
 
-                // Deferred unload: now that new scenes are loaded, unload the scene
-                // we kept alive to satisfy Unity's "cannot unload last scene" rule.
+                // Deferred unload
                 if (deferredSceneUnload.HasValue || deferredAddressableUnload.HasValue)
                 {
                     var deferredTasks = new List<Task>();
@@ -203,7 +291,6 @@ namespace BAStudio.SceneDependency
                 }
 
                 // Phase 3: Load master scene
-                // If the master scene was already loaded (re-load case), unload the old copy first.
                 if (loadedSceneHandles.TryGetValue(sceneGUID, out var prevMasterHandle) && prevMasterHandle.IsValid())
                     await AsyncOpToTask(Addressables.UnloadSceneAsync(prevMasterHandle));
 
@@ -295,14 +382,13 @@ namespace BAStudio.SceneDependency
 
         // --- Dependency resolution ---
 
-        public static List<string> ResolveDependencyTree(SceneDependency root, SceneDependencyIndex index = null)
+        public static async Task<List<string>> ResolveDependencyTreeAsync(SceneDependency root)
         {
-            if (index == null) index = SceneDependencyIndex.AutoInstance;
             HashSet<string> visited = new HashSet<string>();
             if (root.subject != null && !string.IsNullOrEmpty(root.subject.AssetGUID))
                 visited.Add(root.subject.AssetGUID);
             List<string> result = new List<string>();
-            ResolveRequired(root, index, visited, result);
+            await ResolveRequiredAsync(root, visited, result);
 #if UNITY_EDITOR
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("[SceneDependency] Loading dependencies in order:");
@@ -313,7 +399,7 @@ namespace BAStudio.SceneDependency
             return result;
         }
 
-        static void ResolveRequired(SceneDependency subject, SceneDependencyIndex index, HashSet<string> visited, List<string> result)
+        static async Task ResolveRequiredAsync(SceneDependency subject, HashSet<string> visited, List<string> result)
         {
             if (subject.scenes == null) return;
             for (int i = 0; i < subject.scenes.Length; i++)
@@ -322,15 +408,49 @@ namespace BAStudio.SceneDependency
                 if (string.IsNullOrEmpty(guid) || visited.Contains(guid)) continue;
                 visited.Add(guid);
 
-                if (index != null && index.TryGet(guid, out SceneDependency subDeps) && subDeps != null)
-                {
-                    ResolveRequired(subDeps, index, visited, result);
-                }
+                var subDeps = await TryLoadConfigAsync(guid);
+                if (subDeps != null)
+                    await ResolveRequiredAsync(subDeps, visited, result);
+
                 result.Add(guid);
             }
         }
 
-        // --- Async helpers (compatible with all Addressables versions) ---
+        public static List<string> ResolveDependencyTree(SceneDependency root, IReadOnlyDictionary<string, SceneDependency> configs)
+        {
+            HashSet<string> visited = new HashSet<string>();
+            if (root.subject != null && !string.IsNullOrEmpty(root.subject.AssetGUID))
+                visited.Add(root.subject.AssetGUID);
+            List<string> result = new List<string>();
+            ResolveRequired(root, configs, visited, result);
+#if UNITY_EDITOR
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[SceneDependency] Loading dependencies in order:");
+            for (int i = 0; i < result.Count; i++)
+                sb.AppendLine(result[i]);
+            Debug.Log(sb.ToString());
+#endif
+            return result;
+        }
+
+        static void ResolveRequired(SceneDependency subject, IReadOnlyDictionary<string, SceneDependency> configs,
+            HashSet<string> visited, List<string> result)
+        {
+            if (subject.scenes == null) return;
+            for (int i = 0; i < subject.scenes.Length; i++)
+            {
+                string guid = subject.scenes[i].AssetGUID;
+                if (string.IsNullOrEmpty(guid) || visited.Contains(guid)) continue;
+                visited.Add(guid);
+
+                if (configs.TryGetValue(guid, out var subDeps) && subDeps != null)
+                    ResolveRequired(subDeps, configs, visited, result);
+
+                result.Add(guid);
+            }
+        }
+
+        // --- Async helpers ---
 
         internal static Task<T> AsyncOpToTask<T>(AsyncOperationHandle<T> handle)
         {

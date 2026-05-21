@@ -12,7 +12,8 @@ public class TestResolveDependencyTree
         var root = CreateConfig("root-guid", "dep1-guid", "dep2-guid");
         try
         {
-            var result = SceneDependencyRuntime.ResolveDependencyTree(root);
+            var result = SceneDependencyRuntime.ResolveDependencyTree(root,
+                new Dictionary<string, SceneDependency>());
 
             Assert.AreEqual(2, result.Count);
             Assert.Contains("dep1-guid", result);
@@ -35,16 +36,16 @@ public class TestResolveDependencyTree
         var configC = CreateConfig("c-guid", "d-guid");
         var configA = CreateConfig("a-guid", "b-guid", "c-guid");
 
-        var index = ScriptableObject.CreateInstance<SceneDependencyIndex>();
-        index.Add("b-guid", configB);
-        index.Add("c-guid", configC);
-        index.Add("d-guid", configD);
-
-        SceneDependencyIndexEditorAccess.instance = index;
+        var configs = new Dictionary<string, SceneDependency>
+        {
+            ["b-guid"] = configB,
+            ["c-guid"] = configC,
+            ["d-guid"] = configD,
+        };
 
         try
         {
-            var result = SceneDependencyRuntime.ResolveDependencyTree(configA, index);
+            var result = SceneDependencyRuntime.ResolveDependencyTree(configA, configs);
 
             Assert.AreEqual(3, result.Count, "Should have exactly 3 deps (B, C, D)");
             Assert.Contains("b-guid", result);
@@ -62,8 +63,6 @@ public class TestResolveDependencyTree
         }
         finally
         {
-            SceneDependencyIndexEditorAccess.instance = null;
-            Object.DestroyImmediate(index);
             Object.DestroyImmediate(configA);
             Object.DestroyImmediate(configB);
             Object.DestroyImmediate(configC);
@@ -77,7 +76,8 @@ public class TestResolveDependencyTree
         var root = CreateConfig("root-guid");
         try
         {
-            var result = SceneDependencyRuntime.ResolveDependencyTree(root);
+            var result = SceneDependencyRuntime.ResolveDependencyTree(root,
+                new Dictionary<string, SceneDependency>());
             Assert.AreEqual(0, result.Count);
         }
         finally
@@ -93,7 +93,8 @@ public class TestResolveDependencyTree
         root.subject = new AssetReference("root-guid");
         root.scenes = null;
 
-        var result = SceneDependencyRuntime.ResolveDependencyTree(root);
+        var result = SceneDependencyRuntime.ResolveDependencyTree(root,
+            new Dictionary<string, SceneDependency>());
         Assert.AreEqual(0, result.Count);
 
         Object.DestroyImmediate(root);

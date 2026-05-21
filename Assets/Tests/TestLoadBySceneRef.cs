@@ -1,10 +1,8 @@
 using System.Collections;
 using System.Linq;
-using System.Threading.Tasks;
 using BAStudio.SceneDependency;
 using NUnit.Framework;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
@@ -48,19 +46,18 @@ public class TestLoadByAddressable
         var masterScene = handle.Result.Scene;
         Assert.IsTrue(masterScene.IsValid() && masterScene.isLoaded, "Master scene should be loaded");
 
-        var index = SceneDependencyIndex.AutoInstance;
-        if (index != null && index.TryGet(sceneGUID, out var deps) && deps != null && deps.scenes.Length > 0)
+        if (SceneDependencyRuntime.TryGetCachedConfig(sceneGUID, out var deps)
+            && deps != null && deps.scenes != null && deps.scenes.Length > 0)
         {
-            var required = SceneDependencyRuntime.ResolveDependencyTree(deps);
             int loadedCount = 0;
             for (int i = 0; i < SceneManager.sceneCount; i++)
             {
                 if (SceneManager.GetSceneAt(i).isLoaded)
                     loadedCount++;
             }
-            Assert.GreaterOrEqual(loadedCount, required.Count + 1,
+            Assert.GreaterOrEqual(loadedCount, deps.scenes.Length + 1,
                 "Expected at least {0} loaded scenes (master + {1} deps), but only {2} loaded",
-                required.Count + 1, required.Count, loadedCount);
+                deps.scenes.Length + 1, deps.scenes.Length, loadedCount);
         }
 
         Assert.Pass();
