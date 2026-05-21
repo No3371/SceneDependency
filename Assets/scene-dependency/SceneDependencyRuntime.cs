@@ -31,7 +31,6 @@ namespace BAStudio.SceneDependency
 #endif
 #if UNITY_EDITOR
         static Dictionary<string, SceneDependency> editorLookup;
-        static HashSet<string> editorNegativeCache = new HashSet<string>();
 #endif
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -50,7 +49,6 @@ namespace BAStudio.SceneDependency
 #endif
 #if UNITY_EDITOR
             editorLookup = null;
-            editorNegativeCache = new HashSet<string>();
 #endif
             configCache = new Dictionary<string, SceneDependency>();
         }
@@ -117,9 +115,6 @@ namespace BAStudio.SceneDependency
 
         static SceneDependency TryLoadConfigEditor(string sceneGUID)
         {
-            if (editorNegativeCache.Contains(sceneGUID))
-                return null;
-
             if (editorLookup == null)
                 BuildEditorLookup();
 
@@ -133,10 +128,8 @@ namespace BAStudio.SceneDependency
             if (editorLookup.TryGetValue(sceneGUID, out config))
             {
                 configCache[sceneGUID] = config;
-                editorNegativeCache.Remove(sceneGUID);
                 return config;
             }
-            editorNegativeCache.Add(sceneGUID);
             return null;
         }
 #endif
@@ -203,6 +196,21 @@ namespace BAStudio.SceneDependency
                 {
                     inFlightLoads.Remove(sceneGUID);
                 }
+
+                if (mode == LoadSceneMode.Single)
+                {
+                    var staleGUIDs = new List<string>();
+                    foreach (var kvp in loadedSceneHandles)
+                    {
+                        if (kvp.Key == sceneGUID) continue;
+                        staleGUIDs.Add(kvp.Key);
+                        if (kvp.Value.IsValid())
+                            Addressables.Release(kvp.Value);
+                    }
+                    foreach (var stale in staleGUIDs)
+                        loadedSceneHandles.Remove(stale);
+                }
+
                 return directHandle;
             }
 
@@ -286,10 +294,16 @@ namespace BAStudio.SceneDependency
                         if (op != null)
                             unloadTasks.Add(AsyncOpToTask(op));
                     }
-                    if (unloadTasks.Count > 0)
-                        await Task.WhenAll(unloadTasks);
-                    foreach (var (guid, handle) in addressableUnloads)
-                        loadedSceneHandles.Remove(guid);
+                    try
+                    {
+                        if (unloadTasks.Count > 0)
+                            await Task.WhenAll(unloadTasks);
+                    }
+                    finally
+                    {
+                        foreach (var (guid, handle) in addressableUnloads)
+                            loadedSceneHandles.Remove(guid);
+                    }
                 }
 
                 // Phase 2: Load dependencies in parallel
