@@ -1,16 +1,19 @@
-using System.Collections;
-using System.Collections.Generic;
 using BAStudio.SceneDependency;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 
-
 public class TestLoadByName : MonoBehaviour
 {
-    public string sceneName, scenePath;
-    void Start ()
+    public AssetReference scene;
+    async void Start ()
     {
-        SceneDependencyRuntime.LoadSceneAsync(scenePath, sceneName, UnityEngine.SceneManagement.LoadSceneMode.Single, true);
+        try
+        {
+            await SceneDependencyRuntime.LoadSceneAsync(scene, UnityEngine.SceneManagement.LoadSceneMode.Single);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e, this);
+        }
     }
 }

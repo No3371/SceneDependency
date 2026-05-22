@@ -1,377 +1,588 @@
-// #define LOG
-using System.Collections;
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
-
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace BAStudio.SceneDependency
 {
-
-
-#if SD_RES_LEGACY
     public static class SceneDependencyRuntime
     {
-        static SceneDependencyBroker broker;
-        static SceneDependencyBroker Broker
+        public const string ConfigAddressPrefix = "sd:";
+
+        static Dictionary<string, AsyncOperationHandle<SceneInstance>> loadedSceneHandles =
+            new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
+        static Dictionary<string, Task> inFlightLoads =
+            new Dictionary<string, Task>();
+
+        static Dictionary<string, SceneDependency> configCache =
+            new Dictionary<string, SceneDependency>();
+#if !UNITY_EDITOR
+        static Dictionary<string, AsyncOperationHandle<SceneDependency>> configHandles =
+            new Dictionary<string, AsyncOperationHandle<SceneDependency>>();
+        static Dictionary<string, Task<SceneDependency>> inFlightConfigLoads =
+            new Dictionary<string, Task<SceneDependency>>();
+#endif
+#if UNITY_EDITOR
+        static Dictionary<string, SceneDependency> editorLookup;
+#endif
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticState()
         {
-            get
+            loadedSceneHandles = new Dictionary<string, AsyncOperationHandle<SceneInstance>>();
+            inFlightLoads = new Dictionary<string, Task>();
+#if !UNITY_EDITOR
+            foreach (var kvp in configHandles)
             {
-                if (broker != null) return broker;
-                
-                broker = new GameObject("SceneDependencyBroker", typeof(SceneDependencyBroker)).GetComponent<SceneDependencyBroker>();
-                GameObject.DontDestroyOnLoad(broker);
-                return broker;
+                if (kvp.Value.IsValid())
+                    Addressables.Release(kvp.Value);
+            }
+            configHandles = new Dictionary<string, AsyncOperationHandle<SceneDependency>>();
+            inFlightConfigLoads = new Dictionary<string, Task<SceneDependency>>();
+#endif
+#if UNITY_EDITOR
+            editorLookup = null;
+#endif
+            configCache = new Dictionary<string, SceneDependency>();
+        }
+
+        // --- Config loading (replaces central index) ---
+
+        internal static Task<SceneDependency> TryLoadConfigAsync(string sceneGUID)
+        {
+            if (configCache.TryGetValue(sceneGUID, out var cached))
+                return Task.FromResult(cached);
+
+#if UNITY_EDITOR
+            return Task.FromResult(TryLoadConfigEditor(sceneGUID));
+#else
+            return TryLoadConfigRuntime(sceneGUID);
+#endif
+        }
+
+#if !UNITY_EDITOR
+        static async Task<SceneDependency> TryLoadConfigRuntime(string sceneGUID)
+        {
+            if (inFlightConfigLoads.TryGetValue(sceneGUID, out var inFlight))
+                return await inFlight;
+
+            var task = LoadConfigFromAddressables(sceneGUID);
+            inFlightConfigLoads[sceneGUID] = task;
+            try
+            {
+                return await task;
+            }
+            finally
+            {
+                inFlightConfigLoads.Remove(sceneGUID);
             }
         }
+#endif
 
-        static Scene LastLoadedScene { get; set; }
-
-        static SceneDependencyRuntime ()
+        public static bool TryGetCachedConfig(string sceneGUID, out SceneDependency config)
         {
-            Init();
-            SceneManager.sceneLoaded += (s, mode) => {
-                LastLoadedScene = s;
-            };
+            return configCache.TryGetValue(sceneGUID, out config);
         }
 
-        [RuntimeInitializeOnLoadMethod]
-        static void Init ()
+#if UNITY_EDITOR
+        static void BuildEditorLookup()
         {
-            if (SceneDependencyIndex.AutoInstance == null) Debug.Log("[SceneDependency] Index not yet loaded.");
-        }
-
-        public class AsyncOperationWrapper
-        {
-            public AsyncOperation value;
-        }
-
-        public static bool zeroTimeScaleWhenLoading;
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="accesor"></param>
-        /// <param name="id"></param>
-        /// <param name="mode"></param>
-        /// <param name="reloadLoadedDep">By default, dep scene that already loaded will be kept. This option forces all scenes get unloaded then reloaded.</param>
-        /// <returns></returns>
-        public static AsyncOperationWrapper LoadSceneAsync (string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep)
-        {
-            if (SceneDependencyIndex.AutoInstance == null) throw new System.Exception("Please make sure SceneDependency is initialized.");
-            SceneDependency deps = SceneDependencyIndex.AutoInstance.Index[accessor];
-            
-            if (deps == null || deps.scenes.Length == 0) return new AsyncOperationWrapper
+            editorLookup = new Dictionary<string, SceneDependency>();
+            var guids = AssetDatabase.FindAssets("t:SceneDependency");
+            foreach (var assetGUID in guids)
             {
-                value = SceneManager.LoadSceneAsync(accessor, mode)
-            };
+                var path = AssetDatabase.GUIDToAssetPath(assetGUID);
+                var config = AssetDatabase.LoadAssetAtPath<SceneDependency>(path);
+                if (config == null || config.subject == null || string.IsNullOrEmpty(config.subject.AssetGUID))
+                    continue;
 
-            AsyncOperationWrapper aow = new AsyncOperationWrapper();
-            Broker.StartCoroutine(SceneWorker(deps, accessor, id, mode, reloadLoadedDep, aow));
-            return aow;
-        }
-        
-        public static AsyncOperationWrapper LoadSceneAsync (SceneReference scene, LoadSceneMode mode, bool reloadLoadedDep)
-            => LoadSceneAsync(scene.ScenePath, scene.NameCache, mode, reloadLoadedDep);
-
-        static IEnumerator SceneWorker (SceneDependency deps, string accessor, string id, LoadSceneMode mode, bool reloadLoadedDep, AsyncOperationWrapper aow)
-        {
-            float cacheTimeScale = Time.timeScale;
-            if (zeroTimeScaleWhenLoading) Time.timeScale = 0;
-            var depScenes = ResolveDependencyTree(deps);
-            AsyncOperation[] ops = new AsyncOperation[depScenes.Count > SceneManager.sceneCount ? depScenes.Count : SceneManager.sceneCount];
-            Scene previousActiveScene = LastLoadedScene; // Latest loaded scene can not be unloaded (it just fail), we unload it again later
-            if (mode == LoadSceneMode.Single)
-            {
-                for (int i = SceneManager.sceneCount - 1; i >= 0 ; i--)
+                var subjectGUID = config.subject.AssetGUID;
+                if (editorLookup.ContainsKey(subjectGUID))
                 {
-                    Scene iteratingScene = SceneManager.GetSceneAt(i);
-                    if (iteratingScene == LastLoadedScene) continue;
-                    string iteratingScenePath = iteratingScene.path;
-                    if (iteratingScene.name == "DontDestroyOnLoad"
-                     || (SceneDependencyIndex.AutoInstance.Index.ContainsKey(iteratingScenePath)
-                     && SceneDependencyIndex.AutoInstance.Index[iteratingScenePath].NoAutoUnloadInSingleLoadMode)) continue;
-                    
-                    if (reloadLoadedDep && depScenes.Contains(iteratingScenePath))
-                    {
-                        #if LOG
-                        Debug.Log(string.Concat("Reloading scene: ", iteratingScenePath));
-                        #endif
-                        ops[i] = SceneManager.UnloadSceneAsync(iteratingScene);
-                        continue;
-                    }
-                    bool isDep = false;
-                    for (int j = 0; j < deps.scenes.Length; j++)
-                    {
-                        if (iteratingScene.path == deps.scenes[j].ScenePath)
-                        {
-                            isDep = true;
-                            break;
-                        }
-                    }
-                    if (!isDep)
-                    {
-                        #if LOG
-                        Debug.Log(string.Concat("Unloading scene: ", iteratingScenePath));
-                        #endif
-                        ops[i] = SceneManager.UnloadSceneAsync(iteratingScene);
-                    }
-                }
-                previousActiveScene = SceneManager.GetActiveScene();
-            }
-
-
-            float lastCheck = Time.realtimeSinceStartup - 0.2f;
-            while (true)
-            {
-                if (Time.realtimeSinceStartup - lastCheck < 0.1) yield return null;
-                lastCheck = Time.realtimeSinceStartup;
-                int check = ops.Length;
-                for (int i = 0; i < ops.Length; i++)
-                {
-                    if (ops[i] == null || ops[i].isDone) check--;
-                }
-                if (check == 0) break;
-                else yield return null;
-            }
-
-            for (int i = 0; i < ops.Length; i++) ops[i] = null;
-
-            for (int i = 0; i < depScenes.Count; i++)
-            {
-                if (SceneManager.GetSceneByPath(depScenes[i]).isLoaded)
-                {
-                    #if LOG
-                    Debug.Log(string.Concat("Dep scene is loaded, skip: ", depScenes[i]));
-                    #endif
+                    Debug.LogWarning($"[SceneDependency] Duplicate config for scene GUID {subjectGUID} at {path}");
                     continue;
                 }
-                #if LOG
-                Debug.Log(string.Concat("Loading scene: ", depScenes[i]));
-                #endif
-                ops[i] = SceneManager.LoadSceneAsync(depScenes[i], LoadSceneMode.Additive);
+                editorLookup[subjectGUID] = config;
             }
-
-            lastCheck = Time.realtimeSinceStartup - 0.2f;
-            while (true)
-            {
-                if (Time.realtimeSinceStartup - lastCheck < 0.1) yield return null;
-                lastCheck = Time.realtimeSinceStartup;
-                int check = ops.Length;
-                for (int i = 0; i < ops.Length; i++)
-                {
-                    if (ops[i] == null || ops[i].isDone) check--;
-                }
-                if (check == 0) break;
-                else yield return null;
-            }
-
-            if (previousActiveScene.IsValid() && !depScenes.Contains(previousActiveScene.path)) SceneManager.UnloadSceneAsync(previousActiveScene);
-
-            aow.value = SceneManager.LoadSceneAsync(accessor, LoadSceneMode.Additive);
-            aow.value.allowSceneActivation = true;
-            aow.value.completed += (h) => {
-                List<GameObject> cache = new List<GameObject>(32);
-                for (int i = 0; i < depScenes.Count; i++)
-                {
-                    Scene scene = SceneManager.GetSceneByPath(depScenes[i]);
-                    cache.Clear();
-                    scene.GetRootGameObjects(cache);
-                    for (int j = 0; j < cache.Count; j++)
-                    {
-                        if (cache[j] == null) break;
-                        cache[j].GetComponent<SceneDependencyProxy>()?.LoadedAsDep(scene.name, scene.path);
-                    }
-                }
-                SceneManager.SetActiveScene(SceneManager.GetSceneByPath(accessor));
-            };
-            
-            if (zeroTimeScaleWhenLoading) Time.timeScale = cacheTimeScale;
         }
 
-        public static List<string> ResolveDependencyTree (SceneDependency root)
+        static SceneDependency TryLoadConfigEditor(string sceneGUID)
         {
-            HashSet<string> required = new HashSet<string>();
-            ResolveRequired(root, required);
-            List<string> result = new List<string>(required);
-            // result.Reverse();
-#if UNITY_EDITOR
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            sb.AppendLine("Loading dependencies in order:");
-            for (int i = 0; i < result.Count; i++)
+            if (editorLookup == null)
+                BuildEditorLookup();
+
+            if (editorLookup.TryGetValue(sceneGUID, out var config))
             {
-                sb.AppendLine(result[i]);
+                configCache[sceneGUID] = config;
+                return config;
             }
-            Debug.Log(sb.ToString());
+
+            BuildEditorLookup();
+            if (editorLookup.TryGetValue(sceneGUID, out config))
+            {
+                configCache[sceneGUID] = config;
+                return config;
+            }
+            return null;
+        }
 #endif
+
+#if !UNITY_EDITOR
+        static async Task<SceneDependency> LoadConfigFromAddressables(string sceneGUID)
+        {
+            try
+            {
+                var handle = Addressables.LoadAssetAsync<SceneDependency>(ConfigAddressPrefix + sceneGUID);
+                var result = await AsyncOpToTask(handle);
+                configCache[sceneGUID] = result;
+                configHandles[sceneGUID] = handle;
+                return result;
+            }
+            catch (Exception ex)
+            {
+                if (ex is InvalidKeyException || ex.InnerException is InvalidKeyException)
+                    return null;
+                Debug.LogWarning($"[SceneDependency] Failed to load config for GUID {sceneGUID}: {ex.Message}");
+                return null;
+            }
+        }
+#endif
+
+        // --- Scene loading ---
+
+        public static async Task<AsyncOperationHandle<SceneInstance>> LoadSceneAsync(
+            AssetReference sceneRef, LoadSceneMode mode, bool reloadLoadedDep = false)
+        {
+            return await LoadSceneAsync(sceneRef.AssetGUID, mode, reloadLoadedDep);
+        }
+
+        public static async Task<AsyncOperationHandle<SceneInstance>> LoadSceneAsync(
+            string sceneGUID, LoadSceneMode mode, bool reloadLoadedDep = false)
+        {
+            var deps = await TryLoadConfigAsync(sceneGUID);
+
+            if (deps == null || deps.scenes == null || deps.scenes.Length == 0)
+            {
+                if (inFlightLoads.TryGetValue(sceneGUID, out var existing))
+                {
+                    await existing;
+                    if (loadedSceneHandles.TryGetValue(sceneGUID, out var joined))
+                        return joined;
+                    throw new InvalidOperationException(
+                        "[SceneDependency] Scene was unloaded before the awaiting caller could return: " + sceneGUID);
+                }
+
+                var directHandle = Addressables.LoadSceneAsync(sceneGUID, mode);
+                loadedSceneHandles[sceneGUID] = directHandle;
+                var loadTask = AsyncOpToTask(directHandle);
+                inFlightLoads[sceneGUID] = loadTask;
+                try
+                {
+                    await loadTask;
+                }
+                catch
+                {
+                    loadedSceneHandles.Remove(sceneGUID);
+                    throw;
+                }
+                finally
+                {
+                    inFlightLoads.Remove(sceneGUID);
+                }
+
+                if (mode == LoadSceneMode.Single)
+                {
+                    var staleGUIDs = new List<string>();
+                    foreach (var kvp in loadedSceneHandles)
+                    {
+                        if (kvp.Key == sceneGUID) continue;
+                        staleGUIDs.Add(kvp.Key);
+                        if (kvp.Value.IsValid())
+                            Addressables.Release(kvp.Value);
+                    }
+                    foreach (var stale in staleGUIDs)
+                        loadedSceneHandles.Remove(stale);
+                }
+
+                return directHandle;
+            }
+
+            var depGUIDs = await ResolveDependencyTreeAsync(deps);
+
+            if (inFlightLoads.TryGetValue(sceneGUID, out var existingMasterLoad))
+            {
+                await existingMasterLoad;
+                if (loadedSceneHandles.TryGetValue(sceneGUID, out var joined))
+                    return joined;
+                throw new InvalidOperationException(
+                    "[SceneDependency] Scene was unloaded before the awaiting caller could return: " + sceneGUID);
+            }
+
+            var overallCompletion = new TaskCompletionSource<bool>();
+            inFlightLoads[sceneGUID] = overallCompletion.Task;
+
+            var handlesAllocatedThisCall = new List<string>();
+            Scene? deferredSceneUnload = null;
+            (string guid, AsyncOperationHandle<SceneInstance> handle)? deferredAddressableUnload = null;
+            try
+            {
+                // Phase 1: Unload (Single mode)
+                if (mode == LoadSceneMode.Single)
+                {
+                    var addressableUnloads = new List<(string guid, AsyncOperationHandle<SceneInstance> handle)>();
+                    var sceneManagerUnloads = new List<Scene>();
+                    int totalLoadedScenes = 0;
+
+                    for (int i = SceneManager.sceneCount - 1; i >= 0; i--)
+                    {
+                        var scene = SceneManager.GetSceneAt(i);
+                        if (!scene.IsValid() || !scene.isLoaded) continue;
+                        if (scene.name == "DontDestroyOnLoad") continue;
+
+                        totalLoadedScenes++;
+
+                        string loadedGUID = FindGUIDForLoadedScene(scene);
+                        if (loadedGUID == sceneGUID) continue;
+
+                        bool isDep = loadedGUID != null && depGUIDs.Contains(loadedGUID);
+                        if (isDep && !reloadLoadedDep) continue;
+
+                        if (loadedGUID != null && configCache.TryGetValue(loadedGUID, out var loadedConfig)
+                            && loadedConfig != null && loadedConfig.NoAutoUnloadInSingleLoadMode) continue;
+
+                        if (loadedGUID != null && loadedSceneHandles.TryGetValue(loadedGUID, out var existingHandle))
+                        {
+                            addressableUnloads.Add((loadedGUID, existingHandle));
+                        }
+                        else
+                        {
+                            sceneManagerUnloads.Add(scene);
+                        }
+                    }
+
+                    int survivingCount = totalLoadedScenes - addressableUnloads.Count - sceneManagerUnloads.Count;
+                    if (survivingCount <= 0 && (addressableUnloads.Count + sceneManagerUnloads.Count) > 0)
+                    {
+                        if (sceneManagerUnloads.Count > 0)
+                        {
+                            deferredSceneUnload = sceneManagerUnloads[sceneManagerUnloads.Count - 1];
+                            sceneManagerUnloads.RemoveAt(sceneManagerUnloads.Count - 1);
+                        }
+                        else
+                        {
+                            deferredAddressableUnload = addressableUnloads[addressableUnloads.Count - 1];
+                            addressableUnloads.RemoveAt(addressableUnloads.Count - 1);
+                        }
+                    }
+
+                    var unloadTasks = new List<Task>();
+                    foreach (var (guid, handle) in addressableUnloads)
+                    {
+                        if (handle.IsValid())
+                            unloadTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(handle)));
+                    }
+                    foreach (var scene in sceneManagerUnloads)
+                    {
+                        var op = SceneManager.UnloadSceneAsync(scene);
+                        if (op != null)
+                            unloadTasks.Add(AsyncOpToTask(op));
+                    }
+                    try
+                    {
+                        if (unloadTasks.Count > 0)
+                            await Task.WhenAll(unloadTasks);
+                    }
+                    finally
+                    {
+                        foreach (var (guid, handle) in addressableUnloads)
+                            loadedSceneHandles.Remove(guid);
+                    }
+                }
+
+                // Phase 2: Load dependencies in parallel
+                var depLoadTasks = new List<Task>();
+                foreach (var guid in depGUIDs)
+                {
+                    if (loadedSceneHandles.TryGetValue(guid, out var existing)
+                        && existing.IsValid() && existing.IsDone
+                        && existing.Status == AsyncOperationStatus.Succeeded)
+                        continue;
+
+                    if (inFlightLoads.TryGetValue(guid, out var inFlight))
+                    {
+                        depLoadTasks.Add(inFlight);
+                        continue;
+                    }
+
+                    var depHandle = Addressables.LoadSceneAsync(guid, LoadSceneMode.Additive);
+                    loadedSceneHandles[guid] = depHandle;
+                    handlesAllocatedThisCall.Add(guid);
+                    var loadTask = AsyncOpToTask(depHandle);
+                    inFlightLoads[guid] = loadTask;
+                    depLoadTasks.Add(loadTask);
+                }
+                if (depLoadTasks.Count > 0)
+                    await Task.WhenAll(depLoadTasks);
+
+                foreach (var guid in handlesAllocatedThisCall)
+                    inFlightLoads.Remove(guid);
+
+                // Deferred unload
+                if (deferredSceneUnload.HasValue || deferredAddressableUnload.HasValue)
+                {
+                    var deferredTasks = new List<Task>();
+                    if (deferredSceneUnload.HasValue)
+                    {
+                        var ds = deferredSceneUnload.Value;
+                        if (ds.IsValid() && ds.isLoaded)
+                        {
+                            var op = SceneManager.UnloadSceneAsync(ds);
+                            if (op != null)
+                                deferredTasks.Add(AsyncOpToTask(op));
+                        }
+                        deferredSceneUnload = null;
+                    }
+                    if (deferredAddressableUnload.HasValue)
+                    {
+                        var (guid, handle) = deferredAddressableUnload.Value;
+                        if (handle.IsValid())
+                            deferredTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(handle)));
+                        loadedSceneHandles.Remove(guid);
+                        deferredAddressableUnload = null;
+                    }
+                    if (deferredTasks.Count > 0)
+                        await Task.WhenAll(deferredTasks);
+                }
+
+                // Phase 3: Load master scene
+                if (loadedSceneHandles.TryGetValue(sceneGUID, out var prevMasterHandle) && prevMasterHandle.IsValid())
+                    await AsyncOpToTask(Addressables.UnloadSceneAsync(prevMasterHandle));
+
+                var masterHandle = Addressables.LoadSceneAsync(sceneGUID, LoadSceneMode.Additive);
+                loadedSceneHandles[sceneGUID] = masterHandle;
+                handlesAllocatedThisCall.Add(sceneGUID);
+                await AsyncOpToTask(masterHandle);
+
+                // Phase 4: Callbacks and set active
+                var masterScene = masterHandle.Result.Scene;
+                var goCache = new List<GameObject>(32);
+                foreach (var guid in depGUIDs)
+                {
+                    if (!loadedSceneHandles.TryGetValue(guid, out var dh) || !dh.IsValid()) continue;
+                    if (dh.Status != AsyncOperationStatus.Succeeded) continue;
+                    var depScene = dh.Result.Scene;
+                    if (!depScene.IsValid() || !depScene.isLoaded) continue;
+                    goCache.Clear();
+                    depScene.GetRootGameObjects(goCache);
+                    foreach (var go in goCache)
+                        go.GetComponent<SceneDependencyProxy>()?.LoadedAsDep(masterScene.name, sceneGUID);
+                }
+                if (masterScene.IsValid())
+                    SceneManager.SetActiveScene(masterScene);
+
+                overallCompletion.SetResult(true);
+                return masterHandle;
+            }
+            catch (Exception ex)
+            {
+                var cleanupTasks = new List<Task>();
+                foreach (var guid in handlesAllocatedThisCall)
+                {
+                    inFlightLoads.Remove(guid);
+                    if (loadedSceneHandles.TryGetValue(guid, out var h))
+                    {
+                        loadedSceneHandles.Remove(guid);
+                        if (h.IsValid())
+                        {
+                            try { cleanupTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(h))); }
+                            catch (Exception e) { Debug.LogException(e); }
+                        }
+                    }
+                }
+                if (deferredAddressableUnload.HasValue)
+                {
+                    var (dGuid, dHandle) = deferredAddressableUnload.Value;
+                    if (dHandle.IsValid())
+                    {
+                        try { cleanupTasks.Add(AsyncOpToTask(Addressables.UnloadSceneAsync(dHandle))); }
+                        catch (Exception e) { Debug.LogException(e); }
+                    }
+                    loadedSceneHandles.Remove(dGuid);
+                }
+                if (cleanupTasks.Count > 0)
+                {
+                    try { await Task.WhenAll(cleanupTasks); }
+                    catch (Exception e) { Debug.LogException(e); }
+                }
+                overallCompletion.TrySetException(ex);
+                throw;
+            }
+            finally
+            {
+                inFlightLoads.Remove(sceneGUID);
+            }
+        }
+
+        public static async Task UnloadSceneAsync(string sceneGUID)
+        {
+            if (inFlightLoads.TryGetValue(sceneGUID, out var inFlight))
+            {
+                try { await inFlight; }
+                catch { }
+            }
+
+            if (loadedSceneHandles.TryGetValue(sceneGUID, out var handle))
+            {
+                loadedSceneHandles.Remove(sceneGUID);
+                if (handle.IsValid())
+                    await AsyncOpToTask(Addressables.UnloadSceneAsync(handle));
+            }
+        }
+
+        public static async Task UnloadSceneAsync(AssetReference sceneRef)
+        {
+            await UnloadSceneAsync(sceneRef.AssetGUID);
+        }
+
+        // --- Dependency resolution ---
+
+        public static async Task<List<string>> ResolveDependencyTreeAsync(SceneDependency root)
+        {
+            HashSet<string> visited = new HashSet<string>();
+            if (root.subject != null && !string.IsNullOrEmpty(root.subject.AssetGUID))
+                visited.Add(root.subject.AssetGUID);
+            List<string> result = new List<string>();
+            await ResolveRequiredAsync(root, visited, result);
+            LogDependencyOrder(result);
             return result;
         }
 
-        static void ResolveRequired (SceneDependency subject, HashSet<string> results)
+        static async Task ResolveRequiredAsync(SceneDependency subject, HashSet<string> visited, List<string> result)
         {
+            if (subject.scenes == null) return;
             for (int i = 0; i < subject.scenes.Length; i++)
             {
-                if (results.Contains(subject.scenes[i].ScenePath)) continue;
-                if (SceneDependencyIndex.AutoInstance.Index.TryGetValue(subject.scenes[i].ScenePath, out SceneDependency resolving))
-                {
-                    ResolveRequired(resolving, results);
-                }
-                results.Add(subject.scenes[i].ScenePath);
+                if (subject.scenes[i] == null) continue;
+                string guid = subject.scenes[i].AssetGUID;
+                if (string.IsNullOrEmpty(guid) || visited.Contains(guid)) continue;
+                visited.Add(guid);
+
+                var subDeps = await TryLoadConfigAsync(guid);
+                if (subDeps != null)
+                    await ResolveRequiredAsync(subDeps, visited, result);
+
+                result.Add(guid);
             }
+        }
+
+        public static List<string> ResolveDependencyTree(SceneDependency root, IReadOnlyDictionary<string, SceneDependency> configs)
+        {
+            HashSet<string> visited = new HashSet<string>();
+            if (root.subject != null && !string.IsNullOrEmpty(root.subject.AssetGUID))
+                visited.Add(root.subject.AssetGUID);
+            List<string> result = new List<string>();
+            ResolveRequired(root, configs, visited, result);
+            LogDependencyOrder(result);
+            return result;
+        }
+
+        static void ResolveRequired(SceneDependency subject, IReadOnlyDictionary<string, SceneDependency> configs,
+            HashSet<string> visited, List<string> result)
+        {
+            if (subject.scenes == null) return;
+            for (int i = 0; i < subject.scenes.Length; i++)
+            {
+                if (subject.scenes[i] == null) continue;
+                string guid = subject.scenes[i].AssetGUID;
+                if (string.IsNullOrEmpty(guid) || visited.Contains(guid)) continue;
+                visited.Add(guid);
+
+                if (configs.TryGetValue(guid, out var subDeps) && subDeps != null)
+                    ResolveRequired(subDeps, configs, visited, result);
+
+                result.Add(guid);
+            }
+        }
+
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
+        static void LogDependencyOrder(List<string> result)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[SceneDependency] Loading dependencies in order:");
+            for (int i = 0; i < result.Count; i++)
+                sb.AppendLine(result[i]);
+            Debug.Log(sb.ToString());
+        }
+
+        // --- Async helpers ---
+
+        internal static Task<T> AsyncOpToTask<T>(AsyncOperationHandle<T> handle)
+        {
+            if (handle.IsDone)
+            {
+                if (handle.Status == AsyncOperationStatus.Succeeded)
+                    return Task.FromResult(handle.Result);
+                return Task.FromException<T>(handle.OperationException ??
+                    new Exception("[SceneDependency] Addressables operation failed: " + handle.Status));
+            }
+            var tcs = new TaskCompletionSource<T>();
+            handle.Completed += h =>
+            {
+                if (h.Status == AsyncOperationStatus.Succeeded)
+                    tcs.SetResult(h.Result);
+                else
+                    tcs.SetException(h.OperationException ??
+                        new Exception("[SceneDependency] Addressables operation failed: " + h.Status));
+            };
+            return tcs.Task;
+        }
+
+        static Task AsyncOpToTask(AsyncOperationHandle handle)
+        {
+            if (handle.IsDone)
+            {
+                if (handle.Status == AsyncOperationStatus.Succeeded)
+                    return Task.CompletedTask;
+                return Task.FromException(handle.OperationException ??
+                    new Exception("[SceneDependency] Addressables operation failed: " + handle.Status));
+            }
+            var tcs = new TaskCompletionSource<bool>();
+            handle.Completed += h =>
+            {
+                if (h.Status == AsyncOperationStatus.Succeeded)
+                    tcs.SetResult(true);
+                else
+                    tcs.SetException(h.OperationException ??
+                        new Exception("[SceneDependency] Addressables operation failed: " + h.Status));
+            };
+            return tcs.Task;
+        }
+
+        static Task AsyncOpToTask(AsyncOperation op)
+        {
+            if (op.isDone) return Task.CompletedTask;
+            var tcs = new TaskCompletionSource<bool>();
+            op.completed += _ => tcs.SetResult(true);
+            return tcs.Task;
+        }
+
+        static string FindGUIDForLoadedScene(Scene scene)
+        {
+            foreach (var kvp in loadedSceneHandles)
+            {
+                if (kvp.Value.IsValid() && kvp.Value.IsDone
+                    && kvp.Value.Status == AsyncOperationStatus.Succeeded
+                    && kvp.Value.Result.Scene == scene)
+                    return kvp.Key;
+            }
+            return null;
         }
     }
-#else
-
-    public static class SceneDependencyRuntime
-    {
-        static SceneDependencyBroker broker;
-        static SceneDependencyBroker Broker
-        {
-            get
-            {
-                if (broker != null) return broker;
-                
-                broker = new GameObject("SceneDependencyBroker", typeof(SceneDependencyBroker)).GetComponent<SceneDependencyBroker>();
-                GameObject.DontDestroyOnLoad(broker);
-                return broker;
-            }
-        }
-        static SceneDependencyRuntime ()
-        {
-            Init();
-        }
-
-        [RuntimeInitializeOnLoadMethod]
-        static void Init ()
-        {
-            if (SceneDependencyIndex.AutoInstance == null) Debug.Log("[SceneDependency] Index not yet loaded.");
-        }
-
-            #if SD_RES_LEGACY
-        public static AsyncOperation LoadSceneAsync (string accesor, string id, LoadSceneMode mode)
-            #else
-        public static AsyncOperationHandle<SceneInstance> LoadSceneAsync (string accesor, string id, LoadSceneMode mode)
-            #endif
-        {
-            if (SceneDependencyIndex.AutoInstance == null) throw new System.Exception("Please make sure SceneDependency is initialized.");
-            SceneDependency deps = SceneDependencyIndex.AutoInstance.Index[accesor];
-            
-        #if SD_RES_LEGACY
-            if (deps == null) return SceneManager.LoadSceneAsync(accesor, mode);
-        #else
-            if (deps == null) return Addressables.LoadSceneAsync(accesor, mode);
-        #endif
-
-            if (mode == LoadSceneMode.Single)
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                for (int j = 0; j < deps.scenes.Length; j++)
-                {
-                    if (SceneManager.GetSceneAt(i).path == deps.scenes[j].ScenePath)
-                }
-
-            }
-
-            int depCount = 0;
-            // broker.StartCoroutine(Watchman(ref depCount, accesor));
-            #if SD_RES_LEGACY
-                void SceneDepCompleted (AsyncOperation ao) => depCount++;
-            #else
-                void SceneDepCompleted (AsyncOperationHandle<SceneInstance> ao) => depCount++;
-            #endif
-
-            for (int i = 0; i < deps.scenes.Length; i++)
-            {
-                if (SceneManager.GetSceneByPath(deps.scenes[i].ScenePath).isLoaded)
-                {
-                    depCount++;
-                    continue;
-                }
-            #if SD_RES_LEGACY
-                var depAO = SceneManager.LoadSceneAsync(deps.scenes[i], LoadSceneMode.Additive);
-                depAO.completed += SceneDepCompleted;
-            #else
-                var depAO = Addressables.LoadSceneAsync(deps.scenes[i].ScenePath, LoadSceneMode.Additive);
-                depAO.Completed += SceneDepCompleted;
-            #endif
-
-            }
-            
-        #if SD_RES_LEGACY
-            var masterAO = SceneManager.LoadSceneAsync(accesor, LoadSceneMode.Additive);
-            masterAO.allowSceneActivation = false;
-        #else
-            var aoh = Addressables.LoadSceneAsync(accesor, LoadSceneMode.Additive, false);
-        #endif
-
-            Scene prefabScene = SceneManager.CreateScene(id + ".Dependencies");
-
-            if (deps.prefabs.Length == 0)
-            {
-            #if SD_RES_LEGACY
-                masterAO.allowSceneActivation = true;
-            #else
-                aoh.Result.ActivateAsync();
-            #endif
-            }
-            else
-            {
-                void PrefabDepCompleted (GameObject loaded)
-                {
-                    SceneManager.MoveGameObjectToScene(loaded, prefabScene);
-                    depCount++;
-                    if (depCount == deps.scenes.Length + deps.prefabs.Length)
-                    {
-                    #if SD_RES_LEGACY
-                        masterAO.allowSceneActivation = true;
-                    #else
-                        aoh.Result.ActivateAsync();
-                    #endif
-                    }
-                }
-
-            #if SD_RES_LEGACY
-                for (int i = 0; i < deps.prefabs.Length; i++)
-                {
-                    var prefab = GameObject.Instantiate(deps.prefabs[i]);
-                    PrefabDepCompleted(prefab);
-                }
-            #else
-                var prefabAO = Addressables.LoadAssetsAsync<GameObject>(deps.prefabs, PrefabDepCompleted);
-                prefabAO.Completed += (h) => {
-                    if (h.Status == AsyncOperationStatus.Failed)
-                    {
-                        throw new System.Exception("Failed to load dependencies for scene " + id, h.OperationException);
-                    }
-                };
-            #endif
-            }
-
-        #if SD_RES_LEGACY
-            return masterAO;
-            
-        #else
-            return aoh;
-        #endif
-        }
-
-        #if SD_RES_LEGACY
-        public static AsyncOperation LoadSceneAsync (SceneReference scene, LoadSceneMode mode)
-        {
-            return LoadSceneAsync(scene.ScenePath, scene.NameCache, mode);
-        }
-            
-        #else
-        public static AsyncOperationHandle<SceneInstance> LoadSceneAsync (SceneReference scene, LoadSceneMode mode)
-        {
-            return LoadSceneAsync(scene.ScenePath, scene.NameCache, mode);
-        }
-        #endif
-
-
-    }
-#endif
 }

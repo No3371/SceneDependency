@@ -1,124 +1,97 @@
-#define USE_ADDRESSABLES
-
-using System.Linq;
 using UnityEditor;
+using UnityEditor.AddressableAssets;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-#if !USE_ADDRESSABLES
-using Unity.AddressableAssets;
-#endif
 
 namespace BAStudio.SceneDependency
 {
-    [InitializeOnLoad]
     public static class SceneDependencyEditorHooks
     {
-#if SD_RES_LEGACY
+        const string AddressableGroupName = "_SceneDependency";
+
         [InitializeOnLoadMethod]
         public static void Hook ()
         {
-            EditorSceneManager.sceneSaving += (scene, path) => {
-                if (EditorApplication.isPlaying) return;
-                var roots = scene.GetRootGameObjects();
-                var proxy = roots.FirstOrDefault(r => r.GetComponent<SceneDependencyProxy>())?.GetComponent<SceneDependencyProxy>();
-                if (proxy == null || proxy.config == null) return;
-                if (proxy.config.scenes.Length == 0) 
-                    Debug.Log("[SceneDependency] No dependency configured, skip.");
-
-                if (proxy.config.subject == null || string.IsNullOrEmpty(proxy.config.subject.ScenePath))
-                {
-                    Debug.Log("[SceneDependency] The proxy target config is not point to any scene, fixing...");
-                    proxy.config.subject = new SceneReference { ScenePath = path };
-                }
-
-                if (proxy.config.subject.ScenePath != path)
-                {
-                    UnityEditor.EditorGUIUtility.PingObject(proxy.config);
-                    throw new System.Exception("[SceneDependency] Saving scene but target config subject is not equal to this scene!");
-                }
-
-                if (SceneDependencyIndexEditorAccess.Instance.Index.ContainsKey(path))
-                {
-                    if (SceneDependencyIndexEditorAccess.Instance.Index[path] != proxy.config) throw new System.Exception("[SceneDependency] Saving scene but proxy mismatch!");
-                }
-                else
-                {
-                    Debug.Log("[SceneDependency] Adding the dependency config to index...");
-                    SceneDependencyIndexEditorAccess.Instance.Add(path, proxy.config);
-                    EditorUtility.SetDirty(SceneDependencyIndexEditorAccess.Instance);
-                    AssetDatabase.SaveAssets();
-                }
-                Debug.Log("[SceneDependency] Preprocess completed: " + scene.name);
-            };
+            EditorSceneManager.sceneSaving -= OnSceneSaving;
+            EditorSceneManager.sceneSaving += OnSceneSaving;
             Debug.Log("[SceneDependency] Hooked into EditorSceneManager.sceneSaving.");
         }
-#else
-        [InitializeOnLoadMethod]
-        public static void Hook ()
+
+        static void OnSceneSaving(UnityEngine.SceneManagement.Scene scene, string path)
         {
-            // Directives:
-            // - Make sure all config asset is added to the index
-            // - Make sure the index asset is addressable
-            // - Make sure the index use scene addresses as keys to config assets
-            EditorSceneManager.sceneSaving += (scene, path) =>
+            if (EditorApplication.isPlaying) return;
+
+            SceneDependencyProxy proxy = null;
+            foreach (var go in scene.GetRootGameObjects())
             {
+                proxy = go.GetComponent<SceneDependencyProxy>();
+                if (proxy != null) break;
+            }
+            if (proxy == null || proxy.config == null) return;
 
-                var roots = scene.GetRootGameObjects();
-                var proxy = roots.FirstOrDefault(r => r.GetComponent<SceneDependencyProxy>())?.GetComponent<SceneDependencyProxy>();
-                if (proxy == null || proxy.config == null) return;
-                if (proxy.config.scenes.Length == 0 && proxy.config.prefabs.Length == 0) 
-                    Debug.Log("[SceneDependency] No dependency configured, skip.");
+            var sceneGUID = AssetDatabase.GUIDFromAssetPath(path).ToString();
+            var addrSettings = AddressableAssetSettingsDefaultObject.GetSettings(true);
+            var sdGroup = addrSettings.FindGroup(g => g.Name == AddressableGroupName);
+            if (sdGroup == null)
+                sdGroup = addrSettings.CreateGroup(AddressableGroupName, false, true, true, addrSettings.DefaultGroup.Schemas);
 
-                var sceneGUID = AssetDatabase.GUIDFromAssetPath(path).ToString();
-                var addrDefaultSettings = UnityEditor.AddressableAssets.AddressableAssetSettingsDefaultObject.GetSettings(true);
-                var sceneAddressable = addrDefaultSettings.FindAssetEntry(sceneGUID);
-                var sdGroup = addrDefaultSettings.FindGroup((g) => {
-                    return g.Name == "_SceneDependency";
-                });
-                if (sdGroup == null) sdGroup = addrDefaultSettings.CreateGroup("_SceneDependency", false, true, true, addrDefaultSettings.DefaultGroup.Schemas);
+            if (proxy.config.subject == null || proxy.config.subject.editorAsset == null)
+            {
+                Debug.Log("[SceneDependency] The proxy target config is not pointing to any scene, fixing...");
+                proxy.config.subject = addrSettings.CreateAssetReference(sceneGUID);
+            }
 
-                if (proxy.config.subject == null || proxy.config.subject.editorAsset == null)
-                {
-                    Debug.Log("[SceneDependency] The proxy target config is not point to any scene, fixing...");
-                    proxy.config.subject = addrDefaultSettings.CreateAssetReference(sceneGUID);
-                }
+            if (proxy.config.subject.AssetGUID != sceneGUID)
+            {
+                EditorGUIUtility.PingObject(proxy.config);
+                Debug.LogError("[SceneDependency] Saving scene but target config subject is not equal to this scene!");
+                return;
+            }
 
-                if (proxy.config.subject.AssetGUID != sceneGUID)
-                {
-                    UnityEditor.EditorGUIUtility.PingObject(proxy.config);
-                    throw new System.Exception("[SceneDependency] Saving scene but target config subject is not equal to this scene!");
-                }
+            ValidateDepsAddressable(proxy.config, addrSettings);
+            EnsureConfigAddressable(proxy.config, sceneGUID, addrSettings, sdGroup);
 
-                // Mapping scene -> dependency
-                if (SceneDependencyIndexEditorAccess.Instance.Index.ContainsKey(sceneAddressable.address))
-                {
-                    if (SceneDependencyIndexEditorAccess.Instance.Index[sceneAddressable.address] != proxy.config)
-                        throw new System.Exception("[SceneDependency] Saving scene but config object mismatch!");
-                }
-                else
-                {
-                    Debug.Log("[SceneDependency] Adding the dependency config to index...");
-                    SceneDependencyIndexEditorAccess.Instance.Add(GetAddressFromAsset(proxy.config), proxy.config);
-                    EditorUtility.SetDirty(SceneDependencyIndexEditorAccess.Instance);
-                    AssetDatabase.SaveAssets();
-                }
-                Debug.Log("[SceneDependency] Preprocess completed: " + scene.name);
-            };
-            Debug.Log("[SceneDependency] Hooked into EditorSceneManager.sceneSaving.");
+            Debug.Log("[SceneDependency] Preprocess completed: " + scene.name);
         }
-        
-        public static string GetAddressFromAsset(Object target)
+
+        static void EnsureConfigAddressable(SceneDependency config, string sceneGUID,
+            UnityEditor.AddressableAssets.Settings.AddressableAssetSettings settings,
+            UnityEditor.AddressableAssets.Settings.AddressableAssetGroup group)
         {
-            string path = AssetDatabase.GetAssetPath(target);
-            string guid = AssetDatabase.AssetPathToGUID(path);
-            var assetEntry = UnityEditor.AddressableAssets.AddressableAssetSettingsDefaultObject.Settings.FindAssetEntry(guid);
-            return assetEntry?.address;
+            var configAssetPath = AssetDatabase.GetAssetPath(config);
+            if (string.IsNullOrEmpty(configAssetPath)) return;
+
+            var configAssetGUID = AssetDatabase.GUIDFromAssetPath(configAssetPath).ToString();
+            var entry = settings.FindAssetEntry(configAssetGUID);
+            if (entry == null)
+                entry = settings.CreateOrMoveEntry(configAssetGUID, group);
+
+            var expectedAddress = SceneDependencyRuntime.ConfigAddressPrefix + sceneGUID;
+            if (entry.address != expectedAddress)
+            {
+                entry.address = expectedAddress;
+                Debug.Log("[SceneDependency] Set config Addressable address to: " + expectedAddress);
+            }
         }
-        
-        public static string GetGUIDFromAsset(Object target)
+
+        static void ValidateDepsAddressable(SceneDependency config,
+            UnityEditor.AddressableAssets.Settings.AddressableAssetSettings settings)
         {
-            return  AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(target));
+            if (config.scenes == null) return;
+            for (int i = 0; i < config.scenes.Length; i++)
+            {
+                var depRef = config.scenes[i];
+                if (depRef == null || string.IsNullOrEmpty(depRef.AssetGUID)) continue;
+                var entry = settings.FindAssetEntry(depRef.AssetGUID);
+                if (entry == null)
+                {
+                    var depPath = AssetDatabase.GUIDToAssetPath(depRef.AssetGUID);
+                    Debug.LogWarning(string.Format(
+                        "[SceneDependency] Dependency scene '{0}' (GUID: {1}) is not marked as Addressable. " +
+                        "It will fail to load at runtime. Mark it Addressable in the Addressables Groups window.",
+                        depPath, depRef.AssetGUID));
+                }
+            }
         }
-#endif
     }
 }
