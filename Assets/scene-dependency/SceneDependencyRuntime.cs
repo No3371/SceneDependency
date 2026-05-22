@@ -469,6 +469,7 @@ namespace BAStudio.SceneDependency
             if (subject.scenes == null) return;
             for (int i = 0; i < subject.scenes.Length; i++)
             {
+                if (subject.scenes[i] == null) continue;
                 string guid = subject.scenes[i].AssetGUID;
                 if (string.IsNullOrEmpty(guid) || visited.Contains(guid)) continue;
                 visited.Add(guid);
@@ -498,6 +499,7 @@ namespace BAStudio.SceneDependency
             if (subject.scenes == null) return;
             for (int i = 0; i < subject.scenes.Length; i++)
             {
+                if (subject.scenes[i] == null) continue;
                 string guid = subject.scenes[i].AssetGUID;
                 if (string.IsNullOrEmpty(guid) || visited.Contains(guid)) continue;
                 visited.Add(guid);

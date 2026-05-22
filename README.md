@@ -20,12 +20,12 @@ A
 ```
 
 ```csharp
-var handle = await SceneDependencyRuntime.LoadSceneAsync(sceneRef, LoadSceneMode.Single);
-// All deps loaded, master scene active. Store handle for later unload:
+await SceneDependencyRuntime.LoadSceneAsync(sceneRef, LoadSceneMode.Single);
+// All deps loaded, master scene active.
 await SceneDependencyRuntime.UnloadSceneAsync(sceneRef);
 ```
 
-![](Docs/uk1ukKWEsY.gif)
+![Scene dependency loading demo](Docs/uk1ukKWEsY.gif)
 
 ## Setup
 
